@@ -15,9 +15,9 @@ herdr-focus-notify hardcodes which statuses notify (`blocked` and `done`) and th
 The `[notify]` section has these keys:
 
 - `notify_on`: the agent statuses that send a notification. Default `["blocked", "done"]`.
-- `title`: default `"📂 {workspace} · 📑 {tab}"`.
+- `title`: default `"⌂ {workspace} ▸ {tab}"`.
 - `subtitle`: default `""`. An empty subtitle is left out.
-- `message`: default `"{state_icon} {terminal_title_stripped}"`.
+- `message`: default `"{terminal_title}"`.
 - `action_label`: default `"Focus"`.
 - `close_label`: default `"Dismiss"`.
 - `sound`: an `alerter` sound name. Default `""`, which plays no sound.

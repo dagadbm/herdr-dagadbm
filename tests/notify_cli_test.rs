@@ -247,7 +247,7 @@ fn normal_notification_names_the_pane_and_never_requests_an_explanation() {
     let herdr = temp_dir.join("herdr");
     write_executable(
         &herdr,
-        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HERDR_LOG\"\nif [ \"$1 $2\" = \"agent get\" ]; then\n  printf '%s\\n' '{\"result\":{\"agent\":{\"focused\":false,\"pane_id\":\"w1:p2\",\"cwd\":\"/worktrees/api/src\",\"tab_id\":\"w1:t7\",\"terminal_title_stripped\":\"Tidy up the parser tests\"}}}'\nelif [ \"$1 $2\" = \"tab get\" ]; then\n  printf '%s\\n' '{\"result\":{\"tab\":{\"label\":\"status\",\"number\":7}}}'\nelif [ \"$1 $2\" = \"workspace list\" ]; then\n  printf '%s\\n' '{\"result\":{\"workspaces\":[{\"workspace_id\":\"w1\",\"label\":\"sample-repo\"}]}}'\nelif [ \"$1 $2\" = \"worktree list\" ]; then\n  printf '%s\\n' '{\"result\":{\"source\":{\"repo_root\":\"/repo\",\"source_checkout_path\":\"/repo\"},\"worktrees\":[{\"branch\":\"main\",\"is_detached\":false,\"path\":\"/repo\"},{\"branch\":\"feature/api\",\"is_detached\":false,\"path\":\"/worktrees/api\"}]}}'\nfi\n",
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HERDR_LOG\"\nif [ \"$1 $2\" = \"agent get\" ]; then\n  printf '%s\\n' '{\"result\":{\"agent\":{\"focused\":false,\"pane_id\":\"w1:p2\",\"cwd\":\"/worktrees/api/src\",\"tab_id\":\"w1:t7\",\"terminal_title\":\"◐ Tidy up the parser tests\",\"terminal_title_stripped\":\"Tidy up the parser tests\"}}}'\nelif [ \"$1 $2\" = \"tab get\" ]; then\n  printf '%s\\n' '{\"result\":{\"tab\":{\"label\":\"status\",\"number\":7}}}'\nelif [ \"$1 $2\" = \"workspace list\" ]; then\n  printf '%s\\n' '{\"result\":{\"workspaces\":[{\"workspace_id\":\"w1\",\"label\":\"sample-repo\"}]}}'\nelif [ \"$1 $2\" = \"worktree list\" ]; then\n  printf '%s\\n' '{\"result\":{\"source\":{\"repo_root\":\"/repo\",\"source_checkout_path\":\"/repo\"},\"worktrees\":[{\"branch\":\"main\",\"is_detached\":false,\"path\":\"/repo\"},{\"branch\":\"feature/api\",\"is_detached\":false,\"path\":\"/worktrees/api\"}]}}'\nfi\n",
     );
 
     // The git probe is faked as well, so the test can hold the two properties
@@ -294,7 +294,7 @@ fn normal_notification_names_the_pane_and_never_requests_an_explanation() {
     // log into place, so the file appears only once all arguments are written.
     let notifier_output = wait_for_notifier_output(&notifier_log);
 
-    assert!(notifier_output.contains("--title=📂 sample-repo · 📑 status\n"));
+    assert!(notifier_output.contains("--title=⌂ sample-repo ▸ status\n"));
     // The pane's terminal title is the message; the event's own title is not
     // shown next to it.
     assert!(notifier_output.contains("Tidy up the parser tests"));
@@ -325,7 +325,7 @@ fn a_hanging_worktree_lookup_delays_the_notification_by_the_budget_at_most() {
     let herdr = temp_dir.join("herdr");
     write_executable(
         &herdr,
-        "#!/bin/sh\nif [ \"$1 $2\" = \"agent get\" ]; then\n  printf '%s\\n' '{\"result\":{\"agent\":{\"focused\":false,\"pane_id\":\"w1:p2\",\"cwd\":\"/worktrees/api/src\",\"tab_id\":\"w1:t7\",\"terminal_title_stripped\":\"Tidy up the parser tests\"}}}'\nelif [ \"$1 $2\" = \"tab get\" ]; then\n  printf '%s\\n' '{\"result\":{\"tab\":{\"label\":\"status\",\"number\":7}}}'\nelif [ \"$1 $2\" = \"workspace list\" ]; then\n  printf '%s\\n' '{\"result\":{\"workspaces\":[{\"workspace_id\":\"w1\",\"label\":\"sample-repo\"}]}}'\nelif [ \"$1 $2\" = \"worktree list\" ]; then\n  sleep 30; :\nfi\n",
+        "#!/bin/sh\nif [ \"$1 $2\" = \"agent get\" ]; then\n  printf '%s\\n' '{\"result\":{\"agent\":{\"focused\":false,\"pane_id\":\"w1:p2\",\"cwd\":\"/worktrees/api/src\",\"tab_id\":\"w1:t7\",\"terminal_title\":\"◐ Tidy up the parser tests\",\"terminal_title_stripped\":\"Tidy up the parser tests\"}}}'\nelif [ \"$1 $2\" = \"tab get\" ]; then\n  printf '%s\\n' '{\"result\":{\"tab\":{\"label\":\"status\",\"number\":7}}}'\nelif [ \"$1 $2\" = \"workspace list\" ]; then\n  printf '%s\\n' '{\"result\":{\"workspaces\":[{\"workspace_id\":\"w1\",\"label\":\"sample-repo\"}]}}'\nelif [ \"$1 $2\" = \"worktree list\" ]; then\n  sleep 30; :\nfi\n",
     );
 
     let git = temp_dir.join("git");
@@ -362,10 +362,10 @@ fn a_hanging_worktree_lookup_delays_the_notification_by_the_budget_at_most() {
 
     // What answered in time is still shown; the branch is dropped, and with it
     // the git probe, which has no branch to attribute changes to.
-    assert!(notifier_output.contains("--message=🚨 Tidy up the parser tests\n"));
+    assert!(notifier_output.contains("--message=◐ Tidy up the parser tests\n"));
     assert!(notifier_output.contains("Tidy up the parser tests"));
     assert!(
-        notifier_output.contains("--title=📂 sample-repo · 📑 status\n"),
+        notifier_output.contains("--title=⌂ sample-repo ▸ status\n"),
         "{notifier_output}"
     );
     assert!(!git_log.exists());
@@ -416,11 +416,11 @@ fn a_hanging_agent_lookup_still_sends_the_notification_within_the_budget() {
     // was not answered; the lookups behind the text are skipped, since the
     // budget is already spent.
     assert!(
-        notifier_output.contains("--title=📂  · 📑 \n"),
+        notifier_output.contains("--title=⌂  ▸ \n"),
         "{notifier_output}"
     );
     assert!(
-        notifier_output.contains("--message=🚨 \n"),
+        notifier_output.contains("--message= \n"),
         "{notifier_output}"
     );
     assert_eq!(
@@ -843,7 +843,7 @@ esac
         "-b com.example.terminal\n"
     );
     let notifier_args = fs::read_to_string(notifier_log).unwrap();
-    assert!(notifier_args.contains("--message=🚨 "), "{notifier_args}");
+    assert!(notifier_args.contains("--message="), "{notifier_args}");
     assert!(notifier_args.contains("Click to return to this Herdr pane.\n"));
     fs::remove_dir_all(temp_dir).unwrap();
 }
