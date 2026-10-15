@@ -17,6 +17,9 @@ use crate::notify::util::command_stdout;
 pub(crate) struct HerdrClient {
     pub(crate) pid: u32,
     pub(crate) environment: Vec<(String, String)>,
+    /// Working directory of the client process, for terminals that expose no
+    /// container id to the client.
+    pub(crate) cwd: Option<String>,
 }
 
 impl HerdrClient {
@@ -30,9 +33,16 @@ impl HerdrClient {
     }
 
     #[cfg(test)]
+    pub(crate) fn with_cwd(mut self, cwd: &str) -> Self {
+        self.cwd = Some(cwd.to_string());
+        self
+    }
+
+    #[cfg(test)]
     pub(crate) fn from_pairs(pairs: &[(&str, &str)]) -> Self {
         Self {
             pid: 0,
+            cwd: None,
             environment: pairs
                 .iter()
                 .map(|(key, value)| (key.to_string(), value.to_string()))
@@ -57,6 +67,7 @@ pub(crate) fn herdr_clients(herdr_socket_path: &str) -> Result<Vec<HerdrClient>,
         .map(|pid| HerdrClient {
             pid,
             environment: process_environment(pid).unwrap_or_default(),
+            cwd: process_cwd(pid),
         })
         .collect())
 }
@@ -117,6 +128,20 @@ fn client_pids_from_lsof(output: &str, client_socket: &str) -> Vec<u32> {
     pids.sort_unstable();
     pids.dedup();
     pids
+}
+
+/// The working directory of a process, from `lsof -Fn` output (`n<path>`).
+fn process_cwd(pid: u32) -> Option<String> {
+    let output = command_stdout("lsof", &["-a", "-d", "cwd", "-p", &pid.to_string(), "-Fn"])?;
+    cwd_from_lsof(&output)
+}
+
+fn cwd_from_lsof(output: &str) -> Option<String> {
+    output
+        .lines()
+        .find_map(|line| line.strip_prefix('n'))
+        .filter(|path| path.starts_with('/'))
+        .map(str::to_string)
 }
 
 fn controlling_tty(pid: u32) -> Option<String> {
@@ -341,6 +366,15 @@ n->0xother
                 ("KITTY_LISTEN_ON".to_string(), "unix:/tmp/a b".to_string()),
             ])
         );
+    }
+
+    #[test]
+    fn reads_the_working_directory_from_lsof() {
+        assert_eq!(
+            cwd_from_lsof("p100\nfcwd\nn/Users/me/my project\n").as_deref(),
+            Some("/Users/me/my project")
+        );
+        assert_eq!(cwd_from_lsof("p100\n"), None);
     }
 
     #[test]

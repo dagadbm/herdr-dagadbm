@@ -13,8 +13,10 @@
 //! the caller's app-level activation unchanged.
 
 mod client;
+mod ghostty;
 mod iterm2;
 mod kitty;
+mod wezterm;
 
 use std::cmp::Reverse;
 use std::ffi::OsString;
@@ -57,7 +59,12 @@ impl FocusCommand {
     }
 }
 
-const ADAPTERS: &[&dyn TerminalAdapter] = &[&iterm2::Iterm2, &kitty::Kitty];
+const ADAPTERS: &[&dyn TerminalAdapter] = &[
+    &iterm2::Iterm2,
+    &kitty::Kitty,
+    &wezterm::Wezterm,
+    &ghostty::Ghostty,
+];
 
 /// How long a focus command may take. A terminal that asks the user to confirm
 /// a control request would otherwise block the click indefinitely.
@@ -135,6 +142,14 @@ mod tests {
         assert_eq!(
             adapter_for("net.kovidgoyal.kitty").map(|adapter| adapter.bundle_id()),
             Some("net.kovidgoyal.kitty")
+        );
+        assert_eq!(
+            adapter_for("com.github.wez.wezterm").map(|adapter| adapter.bundle_id()),
+            Some("com.github.wez.wezterm")
+        );
+        assert_eq!(
+            adapter_for("com.mitchellh.ghostty").map(|adapter| adapter.bundle_id()),
+            Some("com.mitchellh.ghostty")
         );
         assert!(adapter_for("dev.zed.Zed").is_none());
     }
