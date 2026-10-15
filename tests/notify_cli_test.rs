@@ -1166,3 +1166,92 @@ fn blocked_agent_marks_tab_and_agent_name_and_working_or_focus_restores_them() {
 
     fs::remove_dir_all(temp_dir).unwrap();
 }
+
+#[cfg(unix)]
+#[test]
+fn a_repeated_agent_status_notifies_once_and_leaves_herdr_alone() {
+    let temp_dir = temp_test_dir();
+
+    let herdr = temp_dir.join("herdr");
+    write_executable(
+        &herdr,
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HERDR_LOG\"\nif [ \"$1 $2\" = \"agent get\" ]; then\n  printf '{\"result\":{\"agent\":{\"focused\":false,\"pane_id\":\"%s\",\"tab_id\":\"w1:t7\"}}}\\n' \"$3\"\nelif [ \"$1 $2\" = \"tab get\" ]; then\n  printf '%s\\n' '{\"result\":{\"tab\":{\"label\":\"status\",\"number\":7}}}'\nfi\n",
+    );
+
+    // Appends one line per notification, so repeats are countable.
+    let notifier_log = temp_dir.join("notifier.log");
+    write_executable(
+        &temp_dir.join("alerter"),
+        "#!/bin/sh\nfor arg in \"$@\"; do\n  case \"$arg\" in herdr-*) printf '%s\\n' \"$arg\" >> \"$NOTIFIER_LOG\";; esac\ndone\n",
+    );
+
+    let state_dir = temp_dir.join("state");
+    let herdr_log = temp_dir.join("herdr.log");
+    let path = path_with_temp_dir(&temp_dir);
+    let sent = std::cell::Cell::new(0);
+    // Runs one status event and returns the Herdr calls it made, after waiting
+    // for the notifications it is expected to have sent so far.
+    let run = |pane: &str, status: &str, agent: &str, notifies: bool| {
+        let json = format!(
+            r#"{{"event":"pane.agent_status_changed","data":{{"pane_id":"{pane}","agent_status":"{status}","agent":"{agent}"}}}}"#
+        );
+        let output = binary()
+            .env("HERDR_PLUGIN_EVENT", "pane.agent_status_changed")
+            .env("HERDR_PLUGIN_EVENT_JSON", json)
+            .env("HERDR_BIN_PATH", &herdr)
+            .env("HERDR_PLUGIN_CONFIG_DIR", temp_dir.join("config"))
+            .env("HERDR_PLUGIN_STATE_DIR", &state_dir)
+            .env("NOTIFIER_LOG", &notifier_log)
+            .env("HERDR_LOG", &herdr_log)
+            .env("PATH", &path)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if notifies {
+            sent.set(sent.get() + 1);
+        }
+        for _ in 0..500 {
+            let lines = fs::read_to_string(&notifier_log)
+                .unwrap_or_default()
+                .lines()
+                .count();
+            if lines >= sent.get() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        wait_for_detached_notifier(&state_dir);
+        let log = fs::read_to_string(&herdr_log).unwrap_or_default();
+        fs::remove_file(&herdr_log).ok();
+        log
+    };
+
+    let log = run("w1:p2", "blocked", "claude", true);
+    assert!(log.contains("--display-agent ⚠ claude\n"), "{log}");
+
+    // The echo of the agent marker: same status, marked agent name.
+    let log = run("w1:p2", "blocked", "⚠ claude", false);
+    assert_eq!(log, "", "a repeat must not call Herdr");
+
+    // Another pane keeps its own last status.
+    run("w1:p3", "blocked", "claude", true);
+
+    // A real change, and a return to blocked, each notify again.
+    run("w1:p2", "working", "⚠ claude", false);
+    run("w1:p2", "blocked", "claude", true);
+
+    // Give a wrongly sent extra notification time to show up.
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    let notified = fs::read_to_string(&notifier_log).unwrap_or_default();
+    assert_eq!(
+        notified.lines().collect::<Vec<_>>(),
+        ["herdr-w1-p2", "herdr-w1-p3", "herdr-w1-p2"],
+        "{notified}"
+    );
+
+    fs::remove_dir_all(temp_dir).unwrap();
+}

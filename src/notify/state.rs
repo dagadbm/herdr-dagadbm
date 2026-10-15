@@ -210,6 +210,30 @@ pub(crate) fn cleared_notification_marker_path(pane_id: &str) -> PathBuf {
     plugin_state_dir().join(format!("{}.cleared", notification_group_id(pane_id)))
 }
 
+/// Records `status` as the last agent status seen for the pane and returns
+/// whether it differs from the one recorded before. Herdr repeats
+/// `pane.agent_status_changed` with an unchanged status, for example when the
+/// agent marker changes the pane's display agent, and a repeat must not send
+/// a second notification. Records before anything else writes to Herdr, so the
+/// event a write echoes always finds this status in place.
+pub(crate) fn record_status(pane_id: &str, status: &str) -> io::Result<bool> {
+    let state_dir = plugin_state_dir();
+    fs::create_dir_all(&state_dir)?;
+    record_status_at(&last_status_path(pane_id), status)
+}
+
+fn record_status_at(path: &Path, status: &str) -> io::Result<bool> {
+    if fs::read_to_string(path).is_ok_and(|previous| previous == status) {
+        return Ok(false);
+    }
+    fs::write(path, status)?;
+    Ok(true)
+}
+
+fn last_status_path(pane_id: &str) -> PathBuf {
+    plugin_state_dir().join(format!("{}.last-status", notification_group_id(pane_id)))
+}
+
 pub(crate) fn cleanup_stale_state_files() -> io::Result<()> {
     cleanup_stale_state_files_in(
         &plugin_state_dir(),
@@ -235,7 +259,11 @@ fn retention_for(
         Some(script_retention)
     } else if name.starts_with("focus-origin-") && name.ends_with(".marker") {
         Some(focus_origin_retention)
-    } else if name.contains(".result.") || name.contains(".status.") || name.ends_with(".cleared") {
+    } else if name.contains(".result.")
+        || name.contains(".status.")
+        || name.ends_with(".cleared")
+        || name.ends_with(".last-status")
+    {
         Some(temp_file_retention)
     } else {
         None
@@ -298,6 +326,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_repeated_status_is_not_a_change() {
+        let dir = std::env::temp_dir().join(format!("dagadbm-status-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("herdr-w1-p1.last-status");
+
+        assert!(record_status_at(&path, "blocked").unwrap());
+        assert!(!record_status_at(&path, "blocked").unwrap());
+        assert!(record_status_at(&path, "working").unwrap());
+        assert!(record_status_at(&path, "blocked").unwrap());
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn cleanup_removes_only_generated_state_files() {
         let dir = std::env::temp_dir().join(format!("dagadbm-state-test-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
@@ -305,6 +347,7 @@ mod tests {
         fs::write(dir.join("herdr-w1-p1.result.123456"), "old").unwrap();
         fs::write(dir.join("herdr-w1-p1.status.123456"), "old").unwrap();
         fs::write(dir.join("herdr-w1-p1.cleared"), "old").unwrap();
+        fs::write(dir.join("herdr-w1-p1.last-status"), "old").unwrap();
         fs::write(dir.join("focus-origin-w1.marker"), "old").unwrap();
         fs::write(dir.join("focus-click.log"), "keep").unwrap();
 
@@ -321,6 +364,7 @@ mod tests {
         assert!(!dir.join("herdr-w1-p1.result.123456").exists());
         assert!(!dir.join("herdr-w1-p1.status.123456").exists());
         assert!(!dir.join("herdr-w1-p1.cleared").exists());
+        assert!(!dir.join("herdr-w1-p1.last-status").exists());
         assert!(!dir.join("focus-origin-w1.marker").exists());
         assert!(dir.join("focus-click.log").exists());
         fs::remove_dir_all(dir).unwrap();

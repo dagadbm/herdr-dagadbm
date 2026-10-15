@@ -34,7 +34,7 @@ use notifier::{remove_notification, resolve_notifier_bin, send_notification};
 use script::{rewrite_generated_scripts_without_activation, write_focus_script, AlerterOptions};
 use state::{
     cleanup_stale_state_files, clear_terminal_bindings, mark_notification_cleared,
-    prune_stale_workspace_bindings, reset_notification_clearance,
+    prune_stale_workspace_bindings, record_status, reset_notification_clearance,
 };
 
 /// Time the Herdr and git calls behind one notification get, together: the
@@ -126,6 +126,12 @@ where
         let Some(event) = status_event_from_json(&event_json)? else {
             return Ok(());
         };
+        // A repeat of the pane's last status already had its notification and
+        // its markers. Best-effort: when the state cannot be read or written,
+        // the event counts as a change.
+        if !record_status(&event.pane_id, &event.status).unwrap_or(true) {
+            return Ok(());
+        }
         event
     };
 
