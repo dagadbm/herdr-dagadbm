@@ -12,6 +12,7 @@ mod notification;
 mod notifier;
 mod script;
 mod state;
+mod tab_marker;
 mod template;
 mod terminal;
 mod util;
@@ -119,13 +120,13 @@ where
         };
 
         if env::var("HERDR_PLUGIN_EVENT").as_deref() == Ok("pane.focused") {
-            return handle_pane_focused(&event_json);
+            return handle_pane_focused(&event_json, &config, &herdr_bin);
         }
 
-        match status_event_from_json(&event_json)? {
-            Some(event) if config.status_is_enabled(&event.status) => event,
-            _ => return Ok(()),
-        }
+        let Some(event) = status_event_from_json(&event_json)? else {
+            return Ok(());
+        };
+        event
     };
 
     // One `herdr agent get` answers both questions below: whether the user is
@@ -135,6 +136,13 @@ where
     // counts as unfocused, so the notification is sent.
     let deadline = Instant::now() + LOOKUP_BUDGET;
     let details = pane_details(&event.pane_id, &herdr_bin, deadline).unwrap_or_default();
+
+    if !test_mode {
+        tab_marker::sync_for_status(&config, &event, &details, &herdr_bin, deadline);
+        if !config.status_is_enabled(&event.status) {
+            return Ok(());
+        }
+    }
 
     let mut decision = notification_decision(&event.pane_id, details.focused);
     if decision == NotificationDecision::Skip {
@@ -182,10 +190,16 @@ where
     Ok(())
 }
 
-fn handle_pane_focused(event_json: &str) -> Result<(), String> {
+fn handle_pane_focused(
+    event_json: &str,
+    config: &config::NotifyConfig,
+    herdr_bin: &str,
+) -> Result<(), String> {
     let Some(pane_id) = focused_pane_id_from_event_json(event_json)? else {
         return Ok(());
     };
+
+    tab_marker::clear_for_focus(config, &pane_id, herdr_bin);
 
     // Zero-configuration terminal detection: bind the frontmost terminal to
     // this pane's workspace. Both decisions below share one frontmost lookup,

@@ -15,7 +15,7 @@ notify_on = ["blocked", "done"]
 # A token without a value renders as an empty string.
 title = "⌂ {workspace} ▸ {tab}"
 subtitle = ""   # empty: no subtitle line
-message = "{terminal_title}"
+message = "{state_icon} {terminal_title_stripped}"
 
 # Button that focuses the pane, and the dismiss button.
 action_label = "Focus"
@@ -29,13 +29,27 @@ timeout = 0
 
 # What {state_icon} renders per status, in any template. Every status is
 # accepted, not only the ones in notify_on; a status not listed here uses
-# its default below, and any other status shows "❓".
+# its default below, and any other status shows "·".
 [notify.state_icons]
-blocked = "🚨"
-done = "✅"
-working = "⏳"
-idle = "💤"
-unknown = "❓"
+blocked = "×"
+done = "✓"
+working = "◐"
+idle = "○"
+unknown = "·"
+
+# Marks agents that need you by putting `icon` in front of the tab's label
+# (tab_marker) and in front of the agent name on the pane (agent_marker). The
+# icon comes off when the agent moves to another status or you focus the pane.
+# An empty icon turns a marker off.
+[notify.tab_marker]
+enabled = true
+icon = "⚠"
+statuses = ["blocked", "done"]
+
+[notify.agent_marker]
+enabled = true
+icon = "⚠"
+statuses = ["blocked", "done"]
 
 # Per-status overrides take precedence over the keys above, for example:
 # [notify.status.blocked]

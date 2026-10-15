@@ -26,7 +26,7 @@ Use Herdr's syntax and only Herdr's token names. Add no tokens that Herdr does n
 | `{agent}` | Display name of the agent, falling back to its id |
 | `{terminal_title}` | Pane's terminal title, as reported |
 | `{terminal_title_stripped}` | Terminal title without the agent's status glyph |
-| `{state_icon}` | Emoji per status: `🚨` blocked, `✅` done, `⏳` working, `💤` idle, `❓` other. Configurable (ADR 7) |
+| `{state_icon}` | Per status, the glyphs of Herdr's symbol indicators: `×` blocked, `✓` done, `◐` working, `○` idle, `·` other. Configurable (ADR 7) |
 | `{state_text}` | Herdr's label for the status, else the capitalized status (`Blocked`) |
 | `{branch}` | Branch of the worktree that owns the pane's directory |
 | `{git_status}` | `*` when tracked files changed versus `HEAD`, else empty |

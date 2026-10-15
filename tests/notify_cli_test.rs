@@ -362,7 +362,7 @@ fn a_hanging_worktree_lookup_delays_the_notification_by_the_budget_at_most() {
 
     // What answered in time is still shown; the branch is dropped, and with it
     // the git probe, which has no branch to attribute changes to.
-    assert!(notifier_output.contains("--message=◐ Tidy up the parser tests\n"));
+    assert!(notifier_output.contains("--message=× Tidy up the parser tests\n"));
     assert!(notifier_output.contains("Tidy up the parser tests"));
     assert!(
         notifier_output.contains("--title=⌂ sample-repo ▸ status\n"),
@@ -420,7 +420,7 @@ fn a_hanging_agent_lookup_still_sends_the_notification_within_the_budget() {
         "{notifier_output}"
     );
     assert!(
-        notifier_output.contains("--message= \n"),
+        notifier_output.contains("--message=× \n"),
         "{notifier_output}"
     );
     assert_eq!(
@@ -1090,5 +1090,79 @@ fn init_config_writes_the_example_once() {
         fs::read_to_string(config_dir.join("config.toml")).unwrap(),
         "# mine\n"
     );
+    fs::remove_dir_all(temp_dir).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn blocked_agent_marks_tab_and_agent_name_and_working_or_focus_restores_them() {
+    let temp_dir = temp_test_dir();
+
+    let herdr = temp_dir.join("herdr");
+    write_executable(
+        &herdr,
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HERDR_LOG\"\nif [ \"$1 $2\" = \"agent get\" ]; then\n  printf '%s\\n' '{\"result\":{\"agent\":{\"focused\":false,\"pane_id\":\"w1:p2\",\"tab_id\":\"w1:t7\"}}}'\nelif [ \"$1 $2\" = \"tab get\" ]; then\n  printf '%s\\n' \"{\\\"result\\\":{\\\"tab\\\":{\\\"label\\\":\\\"$TAB_LABEL\\\",\\\"number\\\":7}}}\"\nfi\n",
+    );
+
+    // No status notifies, so only the markers are under test.
+    let config_dir = temp_dir.join("config");
+    fs::create_dir_all(&config_dir).unwrap();
+    fs::write(config_dir.join("config.toml"), "[notify]\nnotify_on = []\n").unwrap();
+
+    let notifier_log = write_logging_notifier(&temp_dir);
+    let herdr_log = temp_dir.join("herdr.log");
+    let path = path_with_temp_dir(&temp_dir);
+    let run = |event: &str, json: &str, tab_label: &str| {
+        let output = binary()
+            .env("HERDR_PLUGIN_EVENT", event)
+            .env("HERDR_PLUGIN_EVENT_JSON", json)
+            .env("HERDR_BIN_PATH", &herdr)
+            .env("HERDR_PLUGIN_CONFIG_DIR", &config_dir)
+            .env("HERDR_PLUGIN_STATE_DIR", temp_dir.join("state"))
+            .env("NOTIFIER_LOG", &notifier_log)
+            .env("HERDR_LOG", &herdr_log)
+            .env("TAB_LABEL", tab_label)
+            .env("PATH", &path)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let log = fs::read_to_string(&herdr_log).unwrap_or_default();
+        fs::remove_file(&herdr_log).ok();
+        log
+    };
+
+    let log = run(
+        "pane.agent_status_changed",
+        r#"{"event":"pane.agent_status_changed","data":{"pane_id":"w1:p2","agent_status":"blocked","agent":"claude"}}"#,
+        "status",
+    );
+    assert!(log.contains("tab rename w1:t7 ⚠ status\n"), "{log}");
+    assert!(
+        log.contains("pane report-metadata w1:p2 --source dagadbm --display-agent ⚠ claude\n"),
+        "{log}"
+    );
+
+    let log = run(
+        "pane.agent_status_changed",
+        r#"{"event":"pane.agent_status_changed","data":{"pane_id":"w1:p2","agent_status":"working","agent":"⚠ claude"}}"#,
+        "⚠ status",
+    );
+    assert!(log.contains("tab rename w1:t7 status\n"), "{log}");
+    assert!(
+        log.contains("pane report-metadata w1:p2 --source dagadbm --clear-display-agent\n"),
+        "{log}"
+    );
+
+    let log = run(
+        "pane.focused",
+        r#"{"event":"pane.focused","data":{"pane_id":"w1:p2"}}"#,
+        "⚠ status",
+    );
+    assert!(log.contains("tab rename w1:t7 status\n"), "{log}");
+
     fs::remove_dir_all(temp_dir).unwrap();
 }

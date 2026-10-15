@@ -108,6 +108,22 @@ pub(crate) struct PaneDetails {
     metadata: BTreeMap<String, String>,
 }
 
+impl PaneDetails {
+    pub(crate) fn tab_id(&self) -> Option<&str> {
+        self.tab_id.as_deref()
+    }
+
+    /// A pane in `tab_id`, focused or not, with nothing else known.
+    #[cfg(test)]
+    pub(crate) fn in_tab(tab_id: Option<&str>, focused: bool) -> Self {
+        Self {
+            focused,
+            tab_id: tab_id.map(str::to_string),
+            ..Self::default()
+        }
+    }
+}
+
 /// One `herdr agent get`, so the decision to notify at all and the
 /// notification's own row read the pane once. None when Herdr cannot answer by
 /// `deadline`, or answers about another pane.
@@ -167,7 +183,7 @@ fn workspace_label(pane_id: &str, herdr_bin: &str, deadline: Instant) -> Option<
 
 /// The label of the tab that holds the pane; an unnamed tab is known by its
 /// number. Best-effort, like `workspace_label`.
-fn tab_label(tab_id: &str, herdr_bin: &str, deadline: Instant) -> Option<String> {
+pub(crate) fn tab_label(tab_id: &str, herdr_bin: &str, deadline: Instant) -> Option<String> {
     let json = command_stdout_until(herdr_bin, &["tab", "get", tab_id], &[], deadline)?;
     tab_label_from_get_json(&json)
 }

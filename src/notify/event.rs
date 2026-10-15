@@ -154,12 +154,12 @@ fn pane_name(pane_id: &str) -> Option<String> {
 /// any of them.
 fn state_icon(status: &str) -> Option<&'static str> {
     match status {
-        "blocked" => Some("🚨"),
-        "done" => Some("✅"),
-        "working" => Some("⏳"),
-        "idle" => Some("💤"),
+        "blocked" => Some("×"),
+        "done" => Some("✓"),
+        "working" => Some("◐"),
+        "idle" => Some("○"),
         "" => None,
-        _ => Some("❓"),
+        _ => Some("·"),
     }
 }
 
@@ -249,7 +249,7 @@ mod tests {
 
         assert_eq!(notification.title, "⌂ sample-repo ▸ status");
         assert_eq!(notification.subtitle, None);
-        assert_eq!(notification.body, "◐ Tidy up the parser tests");
+        assert_eq!(notification.body, "× Tidy up the parser tests");
         assert_eq!(notification.action_label, "Focus");
         assert_eq!(notification.close_label, "Dismiss");
         assert_eq!(notification.group, "herdr-w1-p3");
@@ -273,7 +273,7 @@ mod tests {
 
         assert_eq!(notification.title, "⌂  ▸ ");
         assert_eq!(notification.subtitle, None);
-        assert_eq!(notification.body, "Implement plugin");
+        assert_eq!(notification.body, "× Implement plugin");
     }
 
     #[test]
@@ -300,7 +300,7 @@ mod tests {
 
         let notification = render_notification(&event, &templates, &values);
 
-        assert_eq!(notification.title, "🚨 Needs an answer");
+        assert_eq!(notification.title, "× Needs an answer");
         assert_eq!(notification.subtitle.as_deref(), Some("p3@mac"));
         assert_eq!(notification.body, "Implement plugin clean");
         assert_eq!(notification.action_label, "Go");

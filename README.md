@@ -46,18 +46,28 @@ No config file is needed; without one, every default applies. [`config.example.t
 notify_on = ["blocked", "done"]
 title = "⌂ {workspace} ▸ {tab}"
 subtitle = ""   # empty: no subtitle line
-message = "{terminal_title}"
+message = "{state_icon} {terminal_title_stripped}"
 action_label = "Focus"
 close_label = "Dismiss"
 sound = ""      # an alerter sound name, e.g. "default"; empty plays no sound
 timeout = 0     # seconds before an unclicked notification is dismissed; 0 keeps it
 
 [notify.state_icons]      # what {state_icon} renders, per status
-blocked = "🚨"
-done = "✅"
-working = "⏳"
-idle = "💤"
-unknown = "❓"
+blocked = "×"
+done = "✓"
+working = "◐"
+idle = "○"
+unknown = "·"
+
+[notify.tab_marker]       # icon in front of the tab label of agents that need you
+enabled = true
+icon = "⚠"
+statuses = ["blocked", "done"]
+
+[notify.agent_marker]     # the same, in front of the agent name on the pane
+enabled = true
+icon = "⚠"
+statuses = ["blocked", "done"]
 
 [notify.status.blocked]   # overrides for one status
 title = "{state_icon} {agent} needs you · {workspace}"
@@ -75,7 +85,7 @@ Templates use Herdr's own syntax and token names:
 | `{agent}` | Agent display name |
 | `{terminal_title}` | Pane's terminal title |
 | `{terminal_title_stripped}` | Terminal title without the status glyph |
-| `{state_icon}` | `🚨` blocked, `✅` done, `⏳` working, `💤` idle, `❓` other; set in `[notify.state_icons]` |
+| `{state_icon}` | `×` blocked, `✓` done, `◐` working, `○` idle, `·` other; set in `[notify.state_icons]` |
 | `{state_text}` | Herdr's status label, else e.g. `Blocked` |
 | `{branch}` | Worktree branch |
 | `{git_status}` | `*` when tracked files changed |

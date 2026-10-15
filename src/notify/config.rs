@@ -15,7 +15,9 @@ use serde::Deserialize;
 pub(crate) const DEFAULT_STATUSES: &[&str] = &["blocked", "done"];
 pub(crate) const DEFAULT_TITLE: &str = "⌂ {workspace} ▸ {tab}";
 pub(crate) const DEFAULT_SUBTITLE: &str = "";
-pub(crate) const DEFAULT_MESSAGE: &str = "{terminal_title}";
+pub(crate) const DEFAULT_MESSAGE: &str = "{state_icon} {terminal_title_stripped}";
+pub(crate) const DEFAULT_MARKER_ICON: &str = "⚠";
+pub(crate) const DEFAULT_MARKER_STATUSES: &[&str] = &["blocked", "done"];
 pub(crate) const DEFAULT_ACTION_LABEL: &str = "Focus";
 pub(crate) const DEFAULT_CLOSE_LABEL: &str = "Dismiss";
 
@@ -39,6 +41,56 @@ struct NotifySection {
     status: BTreeMap<String, TemplateOverrides>,
     #[serde(default)]
     state_icons: BTreeMap<String, String>,
+    #[serde(default)]
+    tab_marker: MarkerSection,
+    #[serde(default)]
+    agent_marker: MarkerSection,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct MarkerSection {
+    enabled: Option<bool>,
+    icon: Option<String>,
+    statuses: Option<Vec<String>>,
+}
+
+/// Whether and how the tab label or the agent name of an agent that needs the
+/// user is marked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MarkerConfig {
+    pub(crate) enabled: bool,
+    pub(crate) icon: String,
+    statuses: Vec<String>,
+}
+
+impl MarkerConfig {
+    fn from_section(section: MarkerSection) -> Self {
+        let icon = section
+            .icon
+            .map(|icon| icon.trim().to_string())
+            .unwrap_or_else(|| DEFAULT_MARKER_ICON.to_string());
+        Self {
+            // An empty icon would match every label, so it disables the marker.
+            enabled: section.enabled.unwrap_or(true) && !icon.is_empty(),
+            icon,
+            statuses: section
+                .statuses
+                .unwrap_or_else(|| {
+                    DEFAULT_MARKER_STATUSES
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect()
+                })
+                .into_iter()
+                .map(|status| status.trim().to_ascii_lowercase())
+                .collect(),
+        }
+    }
+
+    /// Whether an agent in `status` gets its tab marked.
+    pub(crate) fn marks(&self, status: &str) -> bool {
+        self.statuses.iter().any(|marked| marked == status)
+    }
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -68,6 +120,8 @@ pub(crate) struct NotifyConfig {
     /// `{state_icon}` replacements per status; unlisted statuses keep the
     /// built-in glyphs.
     state_icons: BTreeMap<String, String>,
+    pub(crate) tab_marker: MarkerConfig,
+    pub(crate) agent_marker: MarkerConfig,
     /// An alerter sound name; None plays no sound.
     pub(crate) sound: Option<String>,
     /// Seconds before an unclicked notification is dismissed; 0 keeps it.
@@ -102,6 +156,8 @@ impl NotifyConfig {
                 .into_iter()
                 .map(|(status, icon)| (status.trim().to_ascii_lowercase(), icon))
                 .collect(),
+            tab_marker: MarkerConfig::from_section(section.tab_marker),
+            agent_marker: MarkerConfig::from_section(section.agent_marker),
         }
     }
 
@@ -237,12 +293,76 @@ mod tests {
 
     #[test]
     fn state_icons_replace_only_the_listed_statuses() {
-        let config = parse("[notify.state_icons]\nDone = \"✅\"\nblocked = \"🚨\"").unwrap();
+        let config = parse("[notify.state_icons]\nDone = \"✓\"\nblocked = \"×\"").unwrap();
 
-        assert_eq!(config.state_icon("done"), Some("✅"));
-        assert_eq!(config.state_icon("blocked"), Some("🚨"));
+        assert_eq!(config.state_icon("done"), Some("✓"));
+        assert_eq!(config.state_icon("blocked"), Some("×"));
         assert_eq!(config.state_icon("working"), None);
         assert_eq!(NotifyConfig::default().state_icon("done"), None);
+    }
+
+    #[test]
+    fn the_markers_default_to_a_warning_on_blocked_and_done_agents() {
+        let marker = parse("").unwrap().tab_marker;
+
+        assert!(marker.enabled);
+        assert_eq!(marker.icon, "⚠");
+        assert!(marker.marks("blocked"));
+        assert!(marker.marks("done"));
+        assert!(!marker.marks("working"));
+        assert_eq!(parse("").unwrap().agent_marker, marker);
+    }
+
+    #[test]
+    fn the_tab_marker_can_be_turned_off_or_changed() {
+        let off = parse("[notify.tab_marker]\nenabled = false")
+            .unwrap()
+            .tab_marker;
+        assert!(!off.enabled);
+
+        let empty = parse("[notify.tab_marker]\nicon = \"\"")
+            .unwrap()
+            .tab_marker;
+        assert!(!empty.enabled);
+
+        let custom = parse("[notify.tab_marker]\nicon = \"●\"\nstatuses = [\"Blocked\", \"done\"]")
+            .unwrap()
+            .tab_marker;
+        assert_eq!(custom.icon, "●");
+        assert!(custom.marks("done"));
+        assert!(custom.marks("blocked"));
+        assert!(!custom.marks("Blocked"));
+    }
+
+    #[test]
+    fn marker_statuses_are_trimmed_lowercased_and_replace_the_defaults() {
+        let config = parse("[notify.agent_marker]\nstatuses = [\" WORKING \", \"Idle\"]").unwrap();
+
+        assert!(config.agent_marker.marks("working"));
+        assert!(config.agent_marker.marks("idle"));
+        assert!(!config.agent_marker.marks("blocked"));
+        assert!(!config.agent_marker.marks("done"));
+        // The other marker keeps its own statuses.
+        assert!(config.tab_marker.marks("blocked"));
+        assert!(!config.tab_marker.marks("working"));
+    }
+
+    #[test]
+    fn the_two_markers_are_configured_independently() {
+        let config =
+            parse("[notify.tab_marker]\nicon = \"●\"\n[notify.agent_marker]\nicon = \"🔥\"")
+                .unwrap();
+
+        assert_eq!(config.tab_marker.icon, "●");
+        assert_eq!(config.agent_marker.icon, "🔥");
+        assert!(config.tab_marker.enabled && config.agent_marker.enabled);
+        let tab_off = parse("[notify.tab_marker]\nenabled = false").unwrap();
+        assert!(!tab_off.tab_marker.enabled);
+        assert!(tab_off.agent_marker.enabled);
+
+        let agent = parse("[notify.agent_marker]\nenabled = false").unwrap();
+        assert!(!agent.agent_marker.enabled);
+        assert!(agent.tab_marker.enabled);
     }
 
     #[test]
@@ -269,5 +389,7 @@ mod tests {
         }
         assert_eq!(config.sound, defaults.sound);
         assert_eq!(config.timeout_secs, defaults.timeout_secs);
+        assert_eq!(config.tab_marker, defaults.tab_marker);
+        assert_eq!(config.agent_marker, defaults.agent_marker);
     }
 }
