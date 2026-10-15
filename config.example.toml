@@ -1,0 +1,42 @@
+# dagadbm plugin config. Herdr's own config.toml rejects keys it does not know,
+# so plugin settings live here, in `herdr plugin config-dir dagadbm`.
+# Every key is optional; a missing key uses the default shown.
+
+[notify]
+# Agent statuses that send a notification. [notify.state_icons] below
+# accepts every status, not only these.
+notify_on = ["blocked", "done"]
+
+# Templates use Herdr's token syntax:
+#   {workspace} {tab} {pane} {agent} {terminal_title} {terminal_title_stripped}
+#   {state_icon} {state_text} {branch} {git_status} {hostname}
+#   $name   a custom value reported through pane metadata
+#   {{ }}   literal braces
+# A token without a value renders as an empty string.
+title = "{state_icon} {workspace} workspace · {tab} tab"
+subtitle = ""          # empty: no subtitle line
+message = "{terminal_title_stripped}"
+
+# Button that focuses the pane, and the dismiss button.
+action_label = "Focus"
+close_label = "Dismiss"
+
+# An alerter sound name such as "default" or "Ping"; empty plays no sound.
+sound = ""
+
+# Seconds before an unclicked notification is dismissed; 0 keeps it.
+timeout = 0
+
+# What {state_icon} renders per status, in any template. Every status is
+# accepted, not only the ones in notify_on; a status not listed here uses
+# its default below, and any other status shows "❓".
+[notify.state_icons]
+blocked = "🚨"
+done = "✅"
+working = "⏳"
+idle = "💤"
+unknown = "❓"
+
+# Per-status overrides take precedence over the keys above, for example:
+# [notify.status.blocked]
+# title = "{state_icon} {agent} needs you · {workspace}"
