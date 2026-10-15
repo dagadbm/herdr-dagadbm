@@ -247,7 +247,7 @@ mod tests {
             &values,
         );
 
-        assert_eq!(notification.title, "🚨 sample-repo workspace · status tab");
+        assert_eq!(notification.title, "🚨 📂 sample-repo · 📑 status");
         assert_eq!(notification.subtitle, None);
         assert_eq!(notification.body, "Tidy up the parser tests");
         assert_eq!(notification.action_label, "Focus");
@@ -271,7 +271,7 @@ mod tests {
             &values,
         );
 
-        assert_eq!(notification.title, "🚨  workspace ·  tab");
+        assert_eq!(notification.title, "🚨 📂  · 📑 ");
         assert_eq!(notification.subtitle, None);
         assert_eq!(notification.body, "Implement plugin");
     }

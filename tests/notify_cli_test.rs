@@ -294,7 +294,7 @@ fn normal_notification_names_the_pane_and_never_requests_an_explanation() {
     // log into place, so the file appears only once all arguments are written.
     let notifier_output = wait_for_notifier_output(&notifier_log);
 
-    assert!(notifier_output.contains("🚨 sample-repo workspace · status tab"));
+    assert!(notifier_output.contains("🚨 📂 sample-repo · 📑 status"));
     // The pane's terminal title is the message; the event's own title is not
     // shown next to it.
     assert!(notifier_output.contains("Tidy up the parser tests"));
@@ -362,7 +362,7 @@ fn a_hanging_worktree_lookup_delays_the_notification_by_the_budget_at_most() {
 
     // What answered in time is still shown; the branch is dropped, and with it
     // the git probe, which has no branch to attribute changes to.
-    assert!(notifier_output.contains("🚨 sample-repo workspace · status tab"));
+    assert!(notifier_output.contains("🚨 📂 sample-repo · 📑 status"));
     assert!(notifier_output.contains("Tidy up the parser tests"));
     assert!(!notifier_output.contains("--subtitle"), "{notifier_output}");
     assert!(!git_log.exists());
@@ -413,7 +413,7 @@ fn a_hanging_agent_lookup_still_sends_the_notification_within_the_budget() {
     // was not answered; the lookups behind the text are skipped, since the
     // budget is already spent.
     assert!(
-        notifier_output.contains("--title=🚨  workspace ·  tab\n"),
+        notifier_output.contains("--title=🚨 📂  · 📑 \n"),
         "{notifier_output}"
     );
     assert!(

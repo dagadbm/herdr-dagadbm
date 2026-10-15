@@ -15,7 +15,7 @@ herdr-focus-notify hardcodes which statuses notify (`blocked` and `done`) and th
 The `[notify]` section has these keys:
 
 - `notify_on`: the agent statuses that send a notification. Default `["blocked", "done"]`.
-- `title`: default `"{state_icon} {workspace} workspace · {tab} tab"`.
+- `title`: default `"{state_icon} 📂 {workspace} · 📑 {tab}"`.
 - `subtitle`: default `""`, which leaves the subtitle out.
 - `message`: default `"{terminal_title_stripped}"`.
 - `action_label`: default `"Focus"`.
@@ -31,5 +31,5 @@ The notification icon is not configurable. It comes from the bundled agent icons
 
 ## Consequences
 
-- The default title is `{state_icon} {workspace} workspace · {tab} tab`, the subtitle is empty, and the message is the terminal title. macOS shows both the title and the subtitle in bold, so by default there is only one bold line.
+- The default title is `{state_icon} 📂 {workspace} · 📑 {tab}`, the subtitle is empty, and the message is the terminal title. macOS shows both the title and the subtitle in bold, so by default there is only one bold line.
 - `action_label` is also the text `alerter` reports on a click. The generated script matches on the configured label, so a custom label still focuses the pane.
