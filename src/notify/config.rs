@@ -13,8 +13,8 @@ use std::path::PathBuf;
 use serde::Deserialize;
 
 pub(crate) const DEFAULT_STATUSES: &[&str] = &["blocked", "done"];
-pub(crate) const DEFAULT_TITLE: &str = "{state_icon} 📂 {workspace} · 📑 {tab}";
-pub(crate) const DEFAULT_SUBTITLE: &str = "";
+pub(crate) const DEFAULT_TITLE: &str = "{state_icon} {agent}";
+pub(crate) const DEFAULT_SUBTITLE: &str = "📂 {workspace} · 📑 {tab}";
 pub(crate) const DEFAULT_MESSAGE: &str = "{terminal_title_stripped}";
 pub(crate) const DEFAULT_ACTION_LABEL: &str = "Focus";
 pub(crate) const DEFAULT_CLOSE_LABEL: &str = "Dismiss";

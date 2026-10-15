@@ -44,8 +44,8 @@ No config file is needed; without one, every default applies. [`config.example.t
 ```toml
 [notify]
 notify_on = ["blocked", "done"]
-title = "{state_icon} 📂 {workspace} · 📑 {tab}"
-subtitle = ""          # empty: no subtitle line
+title = "{state_icon} {agent}"
+subtitle = "📂 {workspace} · 📑 {tab}"   # empty: no subtitle line
 message = "{terminal_title_stripped}"
 action_label = "Focus"
 close_label = "Dismiss"
