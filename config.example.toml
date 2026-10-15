@@ -13,9 +13,9 @@ notify_on = ["blocked", "done"]
 #   $name   a custom value reported through pane metadata
 #   {{ }}   literal braces
 # A token without a value renders as an empty string.
-title = "{state_icon} {agent}"
-subtitle = "📂 {workspace} · 📑 {tab}"   # empty: no subtitle line
-message = "{terminal_title_stripped}"
+title = "📂 {workspace} · 📑 {tab}"
+subtitle = ""   # empty: no subtitle line
+message = "{state_icon} {terminal_title_stripped}"
 
 # Button that focuses the pane, and the dismiss button.
 action_label = "Focus"

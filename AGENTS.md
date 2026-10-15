@@ -22,3 +22,15 @@ A Herdr plugin (`herdr-plugin.toml`, id `dagadbm`) written in Rust. It is macOS 
 - Integration tests in `tests/` stub `herdr`, `git`, `alerter` and `lsappinfo` on `PATH`. Never let a test call the real tools.
 - Local development: `cargo build --release && herdr plugin link .`. Linking does not run the build, and Herdr refuses `plugin install` over a linked plugin.
 - Use `herdr plugin log list --plugin dagadbm` to see hook output and errors.
+
+## Updating the installed plugin
+
+The plugin is installed from GitHub, as in `~/dotfiles/herdr-update.sh`. Push to `main` first, then reinstall:
+
+```sh
+herdr plugin uninstall dagadbm/herdr-dagadbm || true
+herdr plugin install --yes dagadbm/herdr-dagadbm
+herdr plugin list   # the pinned commit must match `git rev-parse HEAD`
+```
+
+`~/dotfiles/herdr-update.sh` does the same and also reinstalls the Claude integration. Use `herdr plugin link .` only for local development.

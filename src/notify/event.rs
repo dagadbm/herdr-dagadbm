@@ -247,12 +247,9 @@ mod tests {
             &values,
         );
 
-        assert_eq!(notification.title, "🚨 Codex");
-        assert_eq!(
-            notification.subtitle.as_deref(),
-            Some("📂 sample-repo · 📑 status")
-        );
-        assert_eq!(notification.body, "Tidy up the parser tests");
+        assert_eq!(notification.title, "📂 sample-repo · 📑 status");
+        assert_eq!(notification.subtitle, None);
+        assert_eq!(notification.body, "🚨 Tidy up the parser tests");
         assert_eq!(notification.action_label, "Focus");
         assert_eq!(notification.close_label, "Dismiss");
         assert_eq!(notification.group, "herdr-w1-p3");
@@ -274,9 +271,9 @@ mod tests {
             &values,
         );
 
-        assert_eq!(notification.title, "🚨 Codex");
-        assert_eq!(notification.subtitle.as_deref(), Some("📂  · 📑 "));
-        assert_eq!(notification.body, "Implement plugin");
+        assert_eq!(notification.title, "📂  · 📑 ");
+        assert_eq!(notification.subtitle, None);
+        assert_eq!(notification.body, "🚨 Implement plugin");
     }
 
     #[test]
