@@ -47,9 +47,9 @@ struct AgentInfo {
     terminal_title: Option<String>,
     terminal_title_stripped: Option<String>,
     /// Custom values the pane reported through `herdr pane report-metadata
-    /// --token`. Herdr 0.9.5 returns them as `tokens`.
-    #[serde(default, alias = "tokens")]
-    metadata: BTreeMap<String, serde_json::Value>,
+    /// --token`.
+    #[serde(default)]
+    tokens: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -258,7 +258,7 @@ fn pane_details_from_get_json(json: &str, expected_pane_id: &str) -> Option<Pane
             terminal_title: agent.terminal_title,
             terminal_title_stripped: agent.terminal_title_stripped,
             metadata: agent
-                .metadata
+                .tokens
                 .into_iter()
                 .filter_map(|(name, value)| Some((name, metadata_text(value)?)))
                 .collect(),
@@ -589,7 +589,7 @@ mod tests {
     #[test]
     fn reads_pane_metadata_as_token_text() {
         let json = r#"{"result":{"agent":{"focused":false,"pane_id":"w1:p3",
-            "terminal_title":"◐ Fix","metadata":{"jj":"clean","count":3,"ok":true,"nested":{}}}}}"#;
+            "terminal_title":"◐ Fix","tokens":{"jj":"clean","count":3,"ok":true,"nested":{}}}}}"#;
 
         let details = pane_details_from_get_json(json, "w1:p3").unwrap();
 

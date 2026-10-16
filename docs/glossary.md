@@ -114,7 +114,7 @@ The pane's terminal title. The stripped form has no status glyph in front.
 Custom values a pane reported to Herdr. A template renders them as `$name`. Strings, numbers and booleans render; other values do not.
 - Code: `metadata`, `metadata_text`
 - File: `src/notify/focus.rs`, `src/notify/template.rs`
-- Herdr: values set with `herdr pane report-metadata --token <name>=<value>`; `tokens` in `herdr agent get` (Herdr 0.9.5). The code also accepts the older name `metadata` (`AgentInfo` in `src/notify/focus.rs`).
+- Herdr: values set with `herdr pane report-metadata --token <name>=<value>`; `tokens` in `herdr agent get`, read into `AgentInfo` in `src/notify/focus.rs`.
 
 ### Worktree branch
 The branch of the worktree that owns the pane's directory: the longest worktree path the directory starts with. A detached `HEAD` has no branch.

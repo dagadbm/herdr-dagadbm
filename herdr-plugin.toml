@@ -1,7 +1,7 @@
 id = "dagadbm"
 name = "dagadbm"
 version = "0.1.0"
-min_herdr_version = "0.7.5"
+min_herdr_version = "0.9.5"
 description = "dagadbm's Herdr plugin: configurable clickable macOS notifications, and more to come."
 platforms = ["macos"]
 
