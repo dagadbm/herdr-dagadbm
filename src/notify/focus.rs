@@ -46,8 +46,9 @@ struct AgentInfo {
     tab_id: Option<String>,
     terminal_title: Option<String>,
     terminal_title_stripped: Option<String>,
-    /// Custom values the pane reported through `herdr pane report-metadata`.
-    #[serde(default)]
+    /// Custom values the pane reported through `herdr pane report-metadata
+    /// --token`. Herdr 0.9.5 returns them as `tokens`.
+    #[serde(default, alias = "tokens")]
     metadata: BTreeMap<String, serde_json::Value>,
 }
 
