@@ -20,10 +20,6 @@ A Herdr plugin (`herdr-plugin.toml`, id `dagadbm`) written in Rust. It is macOS 
 # Tests that need Herdr start their own isolated server (needs herdr installed).
 cargo fmt && cargo clippy --all-targets && cargo test
 
-# Enable the pre-push hook once per clone. It runs fmt, clippy and the tests,
-# and blocks the push if any fails.
-git config core.hooksPath .githooks
-
 # Regenerate the module dependency graph in docs/architecture.md.
 docs/update.sh
 
