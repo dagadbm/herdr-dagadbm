@@ -5,38 +5,36 @@ A Herdr plugin (`herdr-plugin.toml`, id `dagadbm`) written in Rust. It is macOS 
 ## Layout
 
 - `src/main.rs` reads the feature name and passes the remaining arguments to that feature.
-- `src/<feature>/` holds all of one feature's code and assets. Each feature imports only its own code and `src/shared/`. Code that two features need goes in `src/shared/`.
-- `config.example.toml` has one section per feature and lists every key with its default. It must match the defaults in `src/notify/config.rs`; a test enforces this.
-- `docs/adr/` holds one ADR per decision. Add a new ADR, or update the existing one, when a decision changes.
+- `src/<feature>/` holds all of one feature's code and assets. A feature imports only its own code and `src/shared/`.
+- `config.example.toml` has one section per feature and lists every key with its default.
+- [docs/architecture.md](docs/architecture.md): how the plugin works, its invariants, its runtime state, and where to change what. Start here.
+- [docs/glossary.md](docs/glossary.md): every term, its code identifiers, and Herdr's name for it.
+- [docs/dev-guidelines.md](docs/dev-guidelines.md): recipes for common changes, code conventions, running locally and shipping.
+- [docs/test-guidelines.md](docs/test-guidelines.md): unit and integration tests, stubs, the isolated test Herdr server, and the rule that tests never call real tools.
+- [docs/adr/](docs/adr/): one ADR per decision. Add a new ADR, or update the existing one, when a decision changes.
 
-## Naming
+## Commands
 
-The repo is one big plugin, `herdr-dagadbm`, made of small sub-plugins, one per feature: `herdr-dagadbm-<feature>`, such as `herdr-dagadbm-notify`. Every file, folder, alerter group and temporary directory a feature creates at runtime starts with its sub-plugin name, so a file in the state directory shows which feature owns it (ADR 14). The binary and `src/<feature>/` keep the short feature name.
+```sh
+# Format, lint and test. All three must be clean before committing.
+# Tests that need Herdr start their own isolated server (needs herdr installed).
+cargo fmt && cargo clippy --all-targets && cargo test
 
-## Adding a feature
+# Regenerate the module dependency graph in docs/architecture.md.
+docs/update.sh
 
-1. Create `src/<feature>/` with a `run(args)` entry point.
-2. Register it in `src/main.rs`: the `mod` line, the `match` arm and the `USAGE` list.
-3. Add its section to `config.example.toml`.
-4. Add its hooks to `herdr-plugin.toml` under a `# --- <feature> ---` comment.
-5. Add an integration test in `tests/<feature>_cli_test.rs`.
+# Build and try the checkout locally. Linking does not build; rebuild after each change.
+cargo build --release && herdr plugin link .
+herdr plugin log list --plugin dagadbm   # hook output and errors
+herdr plugin unlink dagadbm              # before going back to the installed plugin
 
-The feature is done when `dagadbm <feature> --help` works and the Workflow checks pass.
-
-## Herdr facts
-
-- Herdr's `config.toml` rejects unknown keys, so plugin settings live in `$HERDR_PLUGIN_CONFIG_DIR/config.toml`.
-- Event data comes from `HERDR_PLUGIN_EVENT` and `HERDR_PLUGIN_EVENT_JSON`. The plugin runs the `herdr` CLI (`HERDR_BIN_PATH`) for workspace, tab, pane and worktree details.
-- Template tokens use only Herdr's names: `{workspace}`, `{tab}`, `{agent}` and so on, plus `$name` for pane metadata (ADR 5).
-- `alerter` refuses an empty `--message`.
+# Release: the installed plugin comes from GitHub.
+git push origin main
+~/dotfiles/herdr-update.sh               # reinstalls the plugin and the Claude integration
+herdr plugin list                        # pinned commit must equal: git rev-parse HEAD
+```
 
 ## Workflow
 
 - `cargo fmt && cargo clippy --all-targets && cargo test` must be clean before committing.
-- Integration tests in `tests/` run only against stubs of `herdr`, `git`, `alerter` and `lsappinfo` on `PATH`. A test must never call the real tools.
-- Local development: `cargo build --release && herdr plugin link .`. Linking does not run the build, and Herdr refuses `plugin install` over a linked plugin.
-- Use `herdr plugin log list --plugin dagadbm` to see hook output and errors.
-
-## Updating the installed plugin
-
-The installed plugin comes from GitHub, so push to `main` first. Then run `~/dotfiles/herdr-update.sh`, which reinstalls the plugin and the Claude integration. Afterwards, check that the commit pinned in `herdr plugin list` matches `git rev-parse HEAD`.
+- When modules or `use crate::` imports change (any reference from one module to another), run `docs/update.sh` and commit the result.
