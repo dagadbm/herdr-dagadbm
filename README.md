@@ -1,19 +1,31 @@
-# dagadbm
+# herdr-dagadbm
 
-A Herdr plugin that collects small features as they are needed. Each feature lives in its own folder under `src/`, and the binary runs it as `dagadbm <feature>`.
+My personal [Herdr](https://herdr.dev) plugin. It is a mix of small plugins, one per feature, that I add as I need them. It is built for my own setup and workflow (macOS, my terminals, my agents). You are welcome to use it or borrow from it, but it is not meant as a general-purpose product.
+
+One binary runs every feature by name: `dagadbm <feature>`. Each feature lives in its own folder under `src/` and works on its own.
+
+> **Disclaimer:** this project is written by [Claude](https://claude.ai/code) (Anthropic's AI coding agent) and steered by me: I decide what gets built and how it should behave, review the result, and use it daily. Expect the code to reflect that.
+
+## Origin
+
+The `notify` feature started as a port of [yankewei/herdr-focus-notify](https://github.com/yankewei/herdr-focus-notify) (MIT) by yankewei. Its focus detection, click-to-focus, terminal bindings and agent icons come from there. This project rewrote it in this plugin's structure and added configurable templates and the features below.
 
 ## Features
 
 ### notify
 
-Clickable macOS notifications for agent panes that are blocked or done. Clicking a notification focuses the pane. The title, subtitle, message, sound, timeout and statuses are all configurable. The notification has one `Focus` button.
+macOS notifications for agent panes that need you.
 
-This feature is a port of [yankewei/herdr-focus-notify](https://github.com/yankewei/herdr-focus-notify) (MIT), with configurable templates added.
+- **Clickable notifications** when an agent is blocked or done. Clicking the notification, or its `Focus` button, focuses the pane in Herdr and brings the terminal that runs Herdr to the front.
+- **The right terminal tab**: in iTerm2, kitty, WezTerm and Ghostty, the click selects the tab or window that runs Herdr, not just the app.
+- **No noise when you are already there**: no notification when the pane is focused and its terminal is in front, and a pending notification goes away when you return to the pane.
+- **Markers**: an icon (default `⚠`) in front of the tab label and the agent name while an agent needs you. They clear when the agent moves on or you focus the pane.
+- **Configurable text**: title, subtitle, message, sound, timeout and which statuses notify, with per-status overrides and Herdr's own template tokens.
+- **Robust delivery**: a repeated agent status does not notify twice, and a notification that alerter closes when you click another one is posted again.
 
 ## Requirements
 
 - macOS
-- Herdr 0.7.5 or later
 - Rust, to build on install
 - [alerter](https://github.com/vjeantet/alerter): `brew install vjeantet/tap/alerter`
 
@@ -88,7 +100,7 @@ Templates use Herdr's own syntax and token names:
 | `{branch}` | Worktree branch |
 | `{git_status}` | `*` when tracked files changed |
 | `{hostname}` | Short host name |
-| `$name` | Custom pane metadata value |
+| `$name` | Custom pane value, set with `herdr pane report-metadata <pane> --source <id> --token name=value` |
 | `{{` `}}` | Literal braces |
 
 A token without a value renders as an empty string. An unknown `{token}` is shown as written.
@@ -99,9 +111,15 @@ A token without a value renders as an empty string. An unknown `{token}` is show
 - `dagadbm.notify-init-config`: write the default config if none exists.
 - `dagadbm.notify-clear-terminal-bindings`: forget which terminal app shows each workspace.
 
-## Decisions
+## Development
 
-Design decisions are recorded in [`docs/adr`](docs/adr).
+The code is organized so that an AI agent, or a person, can find their way quickly:
+
+- [`AGENTS.md`](AGENTS.md): the entry point, with the layout and the commands to format, lint, test, build and release.
+- [`docs/architecture.md`](docs/architecture.md): how the plugin works and where to change what.
+- [`docs/glossary.md`](docs/glossary.md): the terms used in the code and their Herdr names.
+- [`docs/dev-guidelines.md`](docs/dev-guidelines.md) and [`docs/test-guidelines.md`](docs/test-guidelines.md): how to make changes and test them. The tests run against a real, isolated Herdr server, so `cargo test` needs Herdr installed and never touches your own session.
+- [`docs/adr`](docs/adr): one record per design decision.
 
 ## License
 
