@@ -4,6 +4,13 @@
 
 mod notify;
 
+/// The test Herdr server from `tests/support/`, compiled into the unit tests
+/// too. Unit tests use only part of it.
+#[cfg(test)]
+#[path = "../tests/support/herdr_server.rs"]
+#[allow(dead_code)]
+mod test_herdr;
+
 use std::env;
 use std::process::ExitCode;
 

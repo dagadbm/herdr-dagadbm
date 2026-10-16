@@ -17,6 +17,51 @@ use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(unix)]
+mod support;
+#[cfg(unix)]
+use support::herdr_server::HerdrServer;
+
+/// The alerter group of a pane's notification.
+#[cfg(unix)]
+fn group(pane: &str) -> String {
+    format!("{PREFIX}-{}", pane.replace(':', "-"))
+}
+
+#[cfg(unix)]
+fn repost() -> String {
+    format!("{PREFIX}.repost")
+}
+
+#[cfg(unix)]
+fn focused_event(pane: &str) -> String {
+    format!(r#"{{"event":"pane.focused","data":{{"pane_id":"{pane}"}}}}"#)
+}
+
+/// Runs the real `git` to set up a repository. Only test setup does this; the
+/// plugin's own `git` calls go to a stub.
+#[cfg(unix)]
+fn real_git(dir: &Path, args: &[&str]) {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        // The user's git config could sign commits or prompt; ignore it.
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .stdin(std::process::Stdio::null())
+        .env("GIT_AUTHOR_NAME", "test")
+        .env("GIT_AUTHOR_EMAIL", "test@example.com")
+        .env("GIT_COMMITTER_NAME", "test")
+        .env("GIT_COMMITTER_EMAIL", "test@example.com")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 fn binary() -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dagadbm"));
     command.arg("notify");
@@ -64,6 +109,24 @@ fn test_mode_reports_bad_configured_herdr_binary() {
 #[test]
 fn focus_event_removes_notification_for_foreground_terminal() {
     let temp_dir = temp_test_dir();
+    let herdr = HerdrServer::shared();
+    let workspace = herdr.workspace();
+    let pane = &workspace.pane_id;
+
+    // A blocked agent whose tab carries the marker, so the focus has
+    // something to restore in the real Herdr.
+    herdr.herdr_quiet(&[
+        "pane",
+        "report-agent",
+        pane,
+        "--source",
+        "test",
+        "--agent",
+        "claude",
+        "--state",
+        "blocked",
+    ]);
+    herdr.herdr(&["tab", "rename", &workspace.tab_id, "⚠ work"]);
 
     write_fixed_frontmost(&temp_dir, "com.example.terminal");
 
@@ -75,11 +138,13 @@ fn focus_event_removes_notification_for_foreground_terminal() {
 
     let notifier_log = temp_dir.join("notifier.log");
     let path = path_with_temp_dir(&temp_dir);
-    let output = binary()
+    let mut command = binary();
+    herdr.connect(&mut command);
+    let output = command
         .env("HERDR_PLUGIN_EVENT", "pane.focused")
         .env(
             "HERDR_PLUGIN_EVENT_JSON",
-            r#"{"event":"pane.focused","data":{"pane_id":"w1:p2"}}"#,
+            format!(r#"{{"event":"pane.focused","data":{{"pane_id":"{pane}"}}}}"#),
         )
         .env("HERDR_PLUGIN_STATE_DIR", temp_dir.join("state"))
         .env("NOTIFIER_LOG", &notifier_log)
@@ -87,11 +152,17 @@ fn focus_event_removes_notification_for_foreground_terminal() {
         .output()
         .unwrap();
 
-    assert!(output.status.success());
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert_eq!(
         fs::read_to_string(&notifier_log).unwrap(),
-        "--remove\nherdr-dagadbm-notify-w1-p2\n"
+        format!("--remove\n{PREFIX}-{}\n", pane.replace(':', "-"))
     );
+    let tab = herdr.herdr(&["tab", "get", &workspace.tab_id]);
+    assert_eq!(tab["result"]["tab"]["label"], "work");
     fs::remove_dir_all(temp_dir).unwrap();
 }
 
@@ -106,12 +177,19 @@ fn focus_event_learns_terminal_from_cfbundleidentifier() {
         "#!/bin/sh\ncase \"$1\" in\n  front) printf '%s\\n' 'ASN:0x0-0x1:' ;;\n  *) printf '%s\\n' '\"CFBundleIdentifier\"=\"com.mitchellh.ghostty\"' ;;\nesac\n",
     );
     write_executable(&temp_dir.join("alerter"), "#!/bin/sh\nexit 0\n");
+    let herdr = HerdrServer::shared();
+    let workspace = herdr.workspace();
 
-    let output = binary()
+    let mut command = binary();
+    herdr.connect(&mut command);
+    let output = command
         .env("HERDR_PLUGIN_EVENT", "pane.focused")
         .env(
             "HERDR_PLUGIN_EVENT_JSON",
-            r#"{"event":"pane.focused","data":{"pane_id":"w1:p2"}}"#,
+            format!(
+                r#"{{"event":"pane.focused","data":{{"pane_id":"{}"}}}}"#,
+                workspace.pane_id
+            ),
         )
         .env("HERDR_PLUGIN_STATE_DIR", &state_dir)
         .env("PATH", path_with_temp_dir(&temp_dir))
@@ -125,7 +203,10 @@ fn focus_event_learns_terminal_from_cfbundleidentifier() {
     );
     assert_eq!(
         fs::read_to_string(state_dir.join(TERMINAL_MEMORY)).unwrap(),
-        r#"{"workspaces":{"w1":"com.mitchellh.ghostty"}}"#
+        format!(
+            r#"{{"workspaces":{{"{}":"com.mitchellh.ghostty"}}}}"#,
+            workspace.workspace_id
+        )
     );
     fs::remove_dir_all(temp_dir).unwrap();
 }
@@ -139,11 +220,11 @@ fn visible_focused_pane_removes_its_pending_notification() {
 
     write_state_frontmost(&temp_dir);
 
-    let herdr = temp_dir.join("herdr");
-    write_executable(
-        &herdr,
-        "#!/bin/sh\nif [ \"$1\" = \"agent\" ] && [ \"$2\" = \"get\" ]; then\n  printf '%s\\n' '{\"result\":{\"agent\":{\"focused\":true,\"pane_id\":\"w1:p2\"}}}'\nelse\n  printf '%s\\n' '{\"result\":{\"panes\":[{\"focused\":true,\"pane_id\":\"w1:p2\"}]}}'\nfi\n",
-    );
+    let herdr = HerdrServer::shared();
+    let workspace = herdr.workspace();
+    let pane = &workspace.pane_id;
+    herdr.report_agent(pane, "claude", "blocked");
+    let _focus = herdr.focus(&workspace);
 
     let notifier = temp_dir.join("alerter");
     write_executable(
@@ -155,15 +236,14 @@ fn visible_focused_pane_removes_its_pending_notification() {
     let remove_signal = temp_dir.join("removed");
     let path = path_with_temp_dir(&temp_dir);
 
-    // Zero configuration: establish the w1 binding first via a real
+    // Zero configuration: establish the workspace binding first via a real
     // pane.focused event while the fake frontmost app is the terminal.
     fs::write(&frontmost_state, "com.example.terminal\n").unwrap();
-    let learn = binary()
+    let mut learn = binary();
+    herdr.connect(&mut learn);
+    let learn = learn
         .env("HERDR_PLUGIN_EVENT", "pane.focused")
-        .env(
-            "HERDR_PLUGIN_EVENT_JSON",
-            r#"{"event":"pane.focused","data":{"pane_id":"w1:p2"}}"#,
-        )
+        .env("HERDR_PLUGIN_EVENT_JSON", focused_event(pane))
         .env("HERDR_PLUGIN_STATE_DIR", temp_dir.join("state"))
         .env("FRONTMOST_STATE", &frontmost_state)
         .env("PATH", &path)
@@ -175,9 +255,10 @@ fn visible_focused_pane_removes_its_pending_notification() {
     // once they switch back to the bound terminal.
     fs::write(&frontmost_state, "com.example.other\n").unwrap();
 
-    let child = binary()
+    let mut child = binary();
+    herdr.connect(&mut child);
+    let child = child
         .arg("--test")
-        .env("HERDR_BIN_PATH", &herdr)
         .env("HERDR_PLUGIN_STATE_DIR", temp_dir.join("state"))
         .env("FRONTMOST_STATE", &frontmost_state)
         .env("NOTIFIER_LOG", &notifier_log)
@@ -198,7 +279,7 @@ fn visible_focused_pane_removes_its_pending_notification() {
 
     assert!(output.status.success());
     let notifier_output = fs::read_to_string(&notifier_log).unwrap_or_default();
-    assert!(notifier_output.contains("--remove\nherdr-dagadbm-notify-w1-p2\n"));
+    assert!(notifier_output.contains(&format!("--remove\n{}\n", group(pane))));
     fs::remove_dir_all(temp_dir).unwrap();
 }
 
@@ -211,11 +292,10 @@ fn test_mode_notifies_even_when_pane_is_visible_and_status_filtered() {
     // visible and a normal event would be skipped.
     write_fixed_frontmost(&temp_dir, "com.example.terminal");
 
-    let herdr = temp_dir.join("herdr");
-    write_executable(
-        &herdr,
-        "#!/bin/sh\nif [ \"$1\" = \"agent\" ] && [ \"$2\" = \"get\" ]; then\n  printf '%s\\n' '{\"result\":{\"agent\":{\"focused\":true,\"pane_id\":\"w1:p2\"}}}'\nelse\n  printf '%s\\n' '{\"result\":{\"panes\":[{\"focused\":true,\"pane_id\":\"w1:p2\"}]}}'\nfi\n",
-    );
+    let herdr = HerdrServer::shared();
+    let workspace = herdr.workspace();
+    herdr.report_agent(&workspace.pane_id, "claude", "blocked");
+    let _focus = herdr.focus(&workspace);
 
     let notifier = temp_dir.join("alerter");
     write_executable(
@@ -225,11 +305,12 @@ fn test_mode_notifies_even_when_pane_is_visible_and_status_filtered() {
 
     let notifier_log = temp_dir.join("notifier.log");
     let path = path_with_temp_dir(&temp_dir);
-    let output = binary()
+    let mut command = binary();
+    herdr.connect(&mut command);
+    let output = command
         .arg("--test")
         // A filter that excludes the hardcoded test status must not suppress
         // a test notification either.
-        .env("HERDR_BIN_PATH", &herdr)
         .env("HERDR_PLUGIN_STATE_DIR", temp_dir.join("state"))
         .env("NOTIFIER_LOG", &notifier_log)
         .env("PATH", path)
@@ -248,11 +329,33 @@ fn test_mode_notifies_even_when_pane_is_visible_and_status_filtered() {
 fn normal_notification_names_the_pane_and_never_requests_an_explanation() {
     let temp_dir = temp_test_dir();
 
-    let herdr = temp_dir.join("herdr");
-    write_executable(
-        &herdr,
-        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HERDR_LOG\"\nif [ \"$1 $2\" = \"agent get\" ]; then\n  printf '%s\\n' '{\"result\":{\"agent\":{\"focused\":false,\"pane_id\":\"w1:p2\",\"cwd\":\"/worktrees/api/src\",\"tab_id\":\"w1:t7\",\"terminal_title\":\"◐ Tidy up the parser tests\",\"terminal_title_stripped\":\"Tidy up the parser tests\"}}}'\nelif [ \"$1 $2\" = \"tab get\" ]; then\n  printf '%s\\n' '{\"result\":{\"tab\":{\"label\":\"status\",\"number\":7}}}'\nelif [ \"$1 $2\" = \"workspace list\" ]; then\n  printf '%s\\n' '{\"result\":{\"workspaces\":[{\"workspace_id\":\"w1\",\"label\":\"sample-repo\"}]}}'\nelif [ \"$1 $2\" = \"worktree list\" ]; then\n  printf '%s\\n' '{\"result\":{\"source\":{\"repo_root\":\"/repo\",\"source_checkout_path\":\"/repo\"},\"worktrees\":[{\"branch\":\"main\",\"is_detached\":false,\"path\":\"/repo\"},{\"branch\":\"feature/api\",\"is_detached\":false,\"path\":\"/worktrees/api\"}]}}'\nfi\n",
+    // A real repository with a linked worktree on `feature/api`. Herdr's
+    // `worktree list` reads it, so the pane works inside the worktree.
+    let repo = temp_dir.join("repo");
+    let worktree = temp_dir.join("api");
+    fs::create_dir(&repo).unwrap();
+    real_git(&repo, &["init", "-q", "-b", "main"]);
+    real_git(&repo, &["commit", "-q", "--allow-empty", "-m", "initial"]);
+    real_git(
+        &repo,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature/api",
+            worktree.to_str().unwrap(),
+        ],
     );
+    fs::create_dir(worktree.join("src")).unwrap();
+
+    let herdr = HerdrServer::shared();
+    let workspace = herdr.workspace_in("sample-repo", &worktree.join("src"));
+    let pane = &workspace.pane_id;
+    herdr.rename_tab(&workspace.tab_id, "status");
+    herdr.report_agent(pane, "codex", "blocked");
+    herdr.set_terminal_title(pane, "◐ Tidy up the parser tests");
+    let logging_herdr = herdr.logging_herdr(&temp_dir);
 
     // The git probe is faked as well, so the test can hold the two properties
     // that keep it from interfering with an agent working in the same
@@ -277,14 +380,17 @@ fn normal_notification_names_the_pane_and_never_requests_an_explanation() {
     let herdr_log = temp_dir.join("herdr.log");
     let git_log = temp_dir.join("git.log");
     let path = path_with_temp_dir(&temp_dir);
-    let output = binary()
+    let mut command = binary();
+    herdr.connect_logged(&mut command, &logging_herdr);
+    let output = command
         .env("HERDR_PLUGIN_CONFIG_DIR", &config_dir)
         .env("HERDR_PLUGIN_EVENT", "pane.agent_status_changed")
         .env(
             "HERDR_PLUGIN_EVENT_JSON",
-            r#"{"event":"pane.agent_status_changed","data":{"pane_id":"w1:p2","agent_status":"blocked","agent":"Codex","title":"Implement plugin"}}"#,
+            format!(
+                r#"{{"event":"pane.agent_status_changed","data":{{"pane_id":"{pane}","agent_status":"blocked","agent":"Codex","title":"Implement plugin"}}}}"#
+            ),
         )
-        .env("HERDR_BIN_PATH", &herdr)
         .env("HERDR_PLUGIN_STATE_DIR", temp_dir.join("state"))
         .env("NOTIFIER_LOG", &notifier_log)
         .env("HERDR_LOG", &herdr_log)
@@ -293,12 +399,19 @@ fn normal_notification_names_the_pane_and_never_requests_an_explanation() {
         .output()
         .unwrap();
 
-    assert!(output.status.success());
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     // The notifier runs in a detached script. The fake notifier renames its
     // log into place, so the file appears only once all arguments are written.
     let notifier_output = wait_for_notifier_output(&notifier_log);
 
-    assert!(notifier_output.contains("--title=⌂ sample-repo ▸ status\n"));
+    assert!(
+        notifier_output.contains("--title=⌂ sample-repo ▸ status\n"),
+        "{notifier_output}"
+    );
     // The pane's terminal title is the message; the event's own title is not
     // shown next to it.
     assert!(notifier_output.contains("Tidy up the parser tests"));
@@ -306,7 +419,10 @@ fn normal_notification_names_the_pane_and_never_requests_an_explanation() {
     assert!(notifier_output.contains("--subtitle"));
     // The pane sits in a linked worktree, so the branch is that worktree's,
     // not the `main` of the checkout Herdr reports as the source.
-    assert!(notifier_output.contains("Codex · feature/api*"));
+    assert!(
+        notifier_output.contains("Codex · feature/api*"),
+        "{notifier_output}"
+    );
     // The dirty check must come from a probe that leaves the index alone and cannot
     // be confused by a translated git.
     let git_log = fs::read_to_string(&git_log).unwrap_or_default();
@@ -324,13 +440,18 @@ fn normal_notification_names_the_pane_and_never_requests_an_explanation() {
 fn a_hanging_worktree_lookup_delays_the_notification_by_the_budget_at_most() {
     let temp_dir = temp_test_dir();
 
-    // `worktree list` never answers in time. The trailing `:` keeps the shell
-    // from exec-ing into `sleep`, so the hang is a descendant holding stdout.
-    let herdr = temp_dir.join("herdr");
-    write_executable(
-        &herdr,
-        "#!/bin/sh\nif [ \"$1 $2\" = \"agent get\" ]; then\n  printf '%s\\n' '{\"result\":{\"agent\":{\"focused\":false,\"pane_id\":\"w1:p2\",\"cwd\":\"/worktrees/api/src\",\"tab_id\":\"w1:t7\",\"terminal_title\":\"◐ Tidy up the parser tests\",\"terminal_title_stripped\":\"Tidy up the parser tests\"}}}'\nelif [ \"$1 $2\" = \"tab get\" ]; then\n  printf '%s\\n' '{\"result\":{\"tab\":{\"label\":\"status\",\"number\":7}}}'\nelif [ \"$1 $2\" = \"workspace list\" ]; then\n  printf '%s\\n' '{\"result\":{\"workspaces\":[{\"workspace_id\":\"w1\",\"label\":\"sample-repo\"}]}}'\nelif [ \"$1 $2\" = \"worktree list\" ]; then\n  sleep 30; :\nfi\n",
-    );
+    // A pane in a git work tree, so the plugin asks for its worktrees, and
+    // `worktree list` never answers in time. Everything else is the real Herdr.
+    let repo = temp_dir.join("repo");
+    fs::create_dir(&repo).unwrap();
+    real_git(&repo, &["init", "-q", "-b", "main"]);
+    let herdr = HerdrServer::shared();
+    let workspace = herdr.workspace_in("sample-repo", &repo);
+    let pane = &workspace.pane_id;
+    herdr.rename_tab(&workspace.tab_id, "status");
+    herdr.report_agent(pane, "codex", "blocked");
+    herdr.set_terminal_title(pane, "◐ Tidy up the parser tests");
+    let hanging_herdr = herdr.hanging_herdr(&temp_dir, "worktree list");
 
     let git = temp_dir.join("git");
     write_executable(
@@ -342,13 +463,16 @@ fn a_hanging_worktree_lookup_delays_the_notification_by_the_budget_at_most() {
     let git_log = temp_dir.join("git.log");
     let path = path_with_temp_dir(&temp_dir);
     let started = std::time::Instant::now();
-    let output = binary()
+    let mut command = binary();
+    herdr.connect_logged(&mut command, &hanging_herdr);
+    let output = command
         .env("HERDR_PLUGIN_EVENT", "pane.agent_status_changed")
         .env(
             "HERDR_PLUGIN_EVENT_JSON",
-            r#"{"event":"pane.agent_status_changed","data":{"pane_id":"w1:p2","agent_status":"blocked","agent":"Codex"}}"#,
+            format!(
+                r#"{{"event":"pane.agent_status_changed","data":{{"pane_id":"{pane}","agent_status":"blocked","agent":"Codex"}}}}"#
+            ),
         )
-        .env("HERDR_BIN_PATH", &herdr)
         .env("HERDR_PLUGIN_STATE_DIR", temp_dir.join("state"))
         .env("NOTIFIER_LOG", &notifier_log)
         .env("GIT_LOG", &git_log)
@@ -383,24 +507,28 @@ fn a_hanging_agent_lookup_still_sends_the_notification_within_the_budget() {
     let temp_dir = temp_test_dir();
 
     // `agent get` decides whether to notify at all, and it never answers in
-    // time. Every other call would answer at once, but the budget is spent.
-    let herdr = temp_dir.join("herdr");
-    write_executable(
-        &herdr,
-        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HERDR_LOG\"\nif [ \"$1 $2\" = \"agent get\" ]; then\n  sleep 30; :\nelif [ \"$1 $2\" = \"workspace list\" ]; then\n  printf '%s\\n' '{\"result\":{\"workspaces\":[{\"workspace_id\":\"w1\",\"label\":\"sample-repo\"}]}}'\nfi\n",
-    );
+    // time. Every other call would reach the real Herdr, but the budget is
+    // spent.
+    let herdr = HerdrServer::shared();
+    let workspace = herdr.workspace_in("sample-repo", Path::new("/tmp"));
+    let pane = &workspace.pane_id;
+    herdr.report_agent(pane, "codex", "blocked");
+    let hanging_herdr = herdr.hanging_herdr(&temp_dir, "agent get");
 
     let notifier_log = write_logging_notifier(&temp_dir);
     let herdr_log = temp_dir.join("herdr.log");
     let path = path_with_temp_dir(&temp_dir);
     let started = std::time::Instant::now();
-    let output = binary()
+    let mut command = binary();
+    herdr.connect_logged(&mut command, &hanging_herdr);
+    let output = command
         .env("HERDR_PLUGIN_EVENT", "pane.agent_status_changed")
         .env(
             "HERDR_PLUGIN_EVENT_JSON",
-            r#"{"event":"pane.agent_status_changed","data":{"pane_id":"w1:p2","agent_status":"blocked","agent":"Codex"}}"#,
+            format!(
+                r#"{{"event":"pane.agent_status_changed","data":{{"pane_id":"{pane}","agent_status":"blocked","agent":"Codex"}}}}"#
+            ),
         )
-        .env("HERDR_BIN_PATH", &herdr)
         .env("HERDR_PLUGIN_STATE_DIR", temp_dir.join("state"))
         .env("NOTIFIER_LOG", &notifier_log)
         .env("HERDR_LOG", &herdr_log)
@@ -429,7 +557,7 @@ fn a_hanging_agent_lookup_still_sends_the_notification_within_the_budget() {
     );
     assert_eq!(
         fs::read_to_string(&herdr_log).unwrap_or_default(),
-        "agent get w1:p2\n"
+        format!("agent get {pane}\n")
     );
     wait_for_detached_notifier(&temp_dir.join("state"));
     fs::remove_dir_all(temp_dir).unwrap();
@@ -442,16 +570,16 @@ fn unfocused_pane_does_not_start_a_visibility_monitor() {
 
     let frontmost_state = temp_dir.join("frontmost-bundle-id");
     fs::write(&frontmost_state, "com.example.other\n").unwrap();
-    let focused_pane_state = temp_dir.join("focused-pane-id");
-    fs::write(&focused_pane_state, "w1:p1\n").unwrap();
 
     write_state_frontmost(&temp_dir);
 
-    let herdr = temp_dir.join("herdr");
-    write_executable(
-        &herdr,
-        "#!/bin/sh\nif [ \"$1\" = \"agent\" ] && [ \"$2\" = \"get\" ]; then\n  focused=false\n  [ \"$(cat \"$FOCUSED_PANE_STATE\")\" = \"w1:p2\" ] && focused=true\n  printf '{\"result\":{\"agent\":{\"focused\":%s,\"pane_id\":\"w1:p2\"}}}\\n' \"$focused\"\nelse\n  printf '{\"result\":{\"panes\":[{\"focused\":true,\"pane_id\":\"%s\"}]}}\\n' \"$(cat \"$FOCUSED_PANE_STATE\")\"\nfi\n",
-    );
+    // Another workspace holds the focus while the notification is sent.
+    let herdr = HerdrServer::shared();
+    let workspace = herdr.workspace();
+    let pane = &workspace.pane_id;
+    herdr.report_agent(pane, "claude", "idle");
+    let elsewhere = herdr.workspace();
+    let focus = herdr.focus(&elsewhere);
 
     let notifier = temp_dir.join("alerter");
     write_executable(
@@ -461,16 +589,18 @@ fn unfocused_pane_does_not_start_a_visibility_monitor() {
 
     let notifier_log = temp_dir.join("notifier.log");
     let path = path_with_temp_dir(&temp_dir);
-    let output = binary()
+    let mut command = binary();
+    herdr.connect(&mut command);
+    let output = command
         .env("HERDR_PLUGIN_EVENT", "pane.agent_status_changed")
         .env(
             "HERDR_PLUGIN_EVENT_JSON",
-            r#"{"event":"pane.agent_status_changed","data":{"pane_id":"w1:p2","agent_status":"done"}}"#,
+            format!(
+                r#"{{"event":"pane.agent_status_changed","data":{{"pane_id":"{pane}","agent_status":"done"}}}}"#
+            ),
         )
-        .env("HERDR_BIN_PATH", &herdr)
         .env("HERDR_PLUGIN_STATE_DIR", temp_dir.join("state"))
         .env("FRONTMOST_STATE", &frontmost_state)
-        .env("FOCUSED_PANE_STATE", &focused_pane_state)
         .env("NOTIFIER_LOG", &notifier_log)
         .env("PATH", path)
         .output()
@@ -484,12 +614,14 @@ fn unfocused_pane_does_not_start_a_visibility_monitor() {
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     assert!(notifier_log.exists());
-    fs::write(&focused_pane_state, "w1:p2\n").unwrap();
+    // The user comes back to the pane; nothing is watching for that.
+    drop(focus);
+    let _focus = herdr.focus(&workspace);
     fs::write(&frontmost_state, "com.example.terminal\n").unwrap();
     std::thread::sleep(std::time::Duration::from_secs(3));
 
     let notifier_output = fs::read_to_string(&notifier_log).unwrap_or_default();
-    assert!(!notifier_output.contains("--remove\nherdr-dagadbm-notify-w1-p2\n"));
+    assert!(!notifier_output.contains(&format!("--remove\n{}\n", group(pane))));
     wait_for_detached_notifier(&temp_dir.join("state"));
     fs::remove_dir_all(temp_dir).unwrap();
 }
@@ -657,24 +789,30 @@ fn focus_socket(expected_pane_id: &str, response: &str) -> (PathBuf, std::thread
 fn focus_click_targets_an_arbitrary_pane_through_the_socket_api() {
     let temp_dir = temp_test_dir();
     let open_log = temp_dir.join("open.log");
-    write_terminal_binding(&temp_dir.join("state"), "w2", "com.example.terminal");
+    let herdr = HerdrServer::shared();
+    let workspace = herdr.workspace();
+    let target = herdr.split(&workspace.pane_id);
+    write_terminal_binding(
+        &temp_dir.join("state"),
+        &workspace.workspace_id,
+        "com.example.terminal",
+    );
     write_executable(
         &temp_dir.join("open"),
         "#!/bin/sh\nprintf '%s\\n' \"$*\" > \"$OPEN_LOG\"\n",
     );
-    let (socket_path, socket_handle) = focus_socket(
-        "w2:p7",
-        r#"{"id":"dagadbm:focus","result":{"type":"pane_info","pane":{"pane_id":"w2:p7","workspace_id":"w2"}}}"#,
-    );
-    let output = binary()
-        .args(["--focus-pane", "w2:p7"])
-        .env("HERDR_SOCKET_PATH", &socket_path)
+    // The click moves the server's focus, so it holds the focus lock.
+    let elsewhere = herdr.workspace();
+    let _focus = herdr.focus(&elsewhere);
+    let mut command = binary();
+    herdr.connect(&mut command);
+    let output = command
+        .args(["--focus-pane", &target])
         .env("HERDR_PLUGIN_STATE_DIR", temp_dir.join("state"))
         .env("OPEN_LOG", &open_log)
         .env("PATH", path_with_temp_dir(&temp_dir))
         .output()
         .unwrap();
-    socket_handle.join().unwrap();
     assert!(
         output.status.success(),
         "{}",
@@ -684,6 +822,7 @@ fn focus_click_targets_an_arbitrary_pane_through_the_socket_api() {
         fs::read_to_string(open_log).unwrap(),
         "-b com.example.terminal\n"
     );
+    assert_eq!(herdr.focused_pane(), target);
     fs::remove_dir_all(temp_dir).unwrap();
 }
 
@@ -805,20 +944,18 @@ fn focus_click_reports_a_socket_that_never_answers() {
 #[test]
 fn notification_content_click_runs_the_focus_helper() {
     let temp_dir = temp_test_dir();
-    let herdr = temp_dir.join("herdr");
     let notifier_log = temp_dir.join("notifier.log");
     let open_log = temp_dir.join("open.log");
-    write_terminal_binding(&temp_dir.join("state"), "w2", "com.example.terminal");
-    write_executable(
-        &herdr,
-        r#"#!/bin/sh
-case "$1 $2" in
-  'pane list') echo '{"result":{"panes":[{"focused":true,"pane_id":"w2:p7"}]}}' ;;
-  'agent get') echo '{"result":{"agent":{"focused":false,"pane_id":"w2:p7"}}}' ;;
-  *) exit 1 ;;
-esac
-"#,
+    let herdr = HerdrServer::shared();
+    let workspace = herdr.workspace();
+    herdr.report_agent(&workspace.pane_id, "claude", "blocked");
+    write_terminal_binding(
+        &temp_dir.join("state"),
+        &workspace.workspace_id,
+        "com.example.terminal",
     );
+    // `--test` notifies for the focused pane, and the click focuses it.
+    let _focus = herdr.focus(&workspace);
     write_executable(
         &temp_dir.join("alerter"),
         "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$NOTIFIER_LOG\"\necho '@CONTENTCLICKED'\n",
@@ -828,21 +965,16 @@ esac
         "#!/bin/sh\nprintf '%s\\n' \"$*\" > \"$OPEN_LOG\"\n",
     );
     write_executable(&temp_dir.join("lsappinfo"), "#!/bin/sh\nexit 1\n");
-    let (socket_path, socket_handle) = focus_socket(
-        "w2:p7",
-        r#"{"id":"dagadbm:focus","result":{"type":"pane_info","pane":{"pane_id":"w2:p7","workspace_id":"w2"}}}"#,
-    );
-    let output = binary()
+    let mut command = binary();
+    herdr.connect(&mut command);
+    let output = command
         .arg("--test")
-        .env("HERDR_BIN_PATH", &herdr)
-        .env("HERDR_SOCKET_PATH", &socket_path)
         .env("HERDR_PLUGIN_STATE_DIR", temp_dir.join("state"))
         .env("NOTIFIER_LOG", &notifier_log)
         .env("OPEN_LOG", &open_log)
         .env("PATH", path_with_temp_dir(&temp_dir))
         .output()
         .unwrap();
-    socket_handle.join().unwrap();
     assert!(
         output.status.success(),
         "{}",
@@ -895,17 +1027,23 @@ fn notification_focus_does_not_overwrite_existing_terminal_binding() {
     let temp_dir = temp_test_dir();
     let state_dir = temp_dir.join("state");
     let frontmost_state = temp_dir.join("frontmost");
-    write_terminal_binding(&state_dir, "w1", "com.mitchellh.ghostty");
+    let herdr = HerdrServer::shared();
+    let workspace = herdr.workspace();
+    let (workspace_id, pane) = (&workspace.workspace_id, &workspace.pane_id);
+    write_terminal_binding(&state_dir, workspace_id, "com.mitchellh.ghostty");
     fs::write(&frontmost_state, "com.example.notification-app\n").unwrap();
     write_state_frontmost(&temp_dir);
     write_executable(&temp_dir.join("open"), "#!/bin/sh\nexit 0\n");
+    // The click talks to a fake socket, so the test controls its answer.
     let (socket_path, socket_handle) = focus_socket(
-        "w1:p2",
-        r#"{"id":"dagadbm:focus","result":{"type":"pane_info","pane":{"pane_id":"w1:p2","workspace_id":"w1"}}}"#,
+        pane,
+        &format!(
+            r#"{{"id":"dagadbm:focus","result":{{"type":"pane_info","pane":{{"pane_id":"{pane}","workspace_id":"{workspace_id}"}}}}}}"#
+        ),
     );
 
     let focus = binary()
-        .args(["--focus-pane", "w1:p2"])
+        .args(["--focus-pane", pane])
         .env("HERDR_SOCKET_PATH", &socket_path)
         .env("HERDR_PLUGIN_STATE_DIR", &state_dir)
         .env("FRONTMOST_STATE", &frontmost_state)
@@ -919,12 +1057,15 @@ fn notification_focus_does_not_overwrite_existing_terminal_binding() {
         String::from_utf8_lossy(&focus.stderr)
     );
 
-    let event = binary()
+    // The focus event runs against the real test Herdr server.
+    let mut event = binary();
+    herdr.connect(&mut event);
+    let event = event
         .env("HERDR_PLUGIN_STATE_DIR", &state_dir)
         .env("HERDR_PLUGIN_EVENT", "pane.focused")
         .env(
             "HERDR_PLUGIN_EVENT_JSON",
-            r#"{"event":"pane.focused","data":{"pane_id":"w1:p2"}}"#,
+            format!(r#"{{"event":"pane.focused","data":{{"pane_id":"{pane}"}}}}"#),
         )
         .env("FRONTMOST_STATE", &frontmost_state)
         .env("PATH", path_with_temp_dir(&temp_dir))
@@ -938,7 +1079,7 @@ fn notification_focus_does_not_overwrite_existing_terminal_binding() {
 
     assert_eq!(
         fs::read_to_string(state_dir.join(TERMINAL_MEMORY)).unwrap(),
-        r#"{"workspaces":{"w1":"com.mitchellh.ghostty"}}"#
+        format!(r#"{{"workspaces":{{"{workspace_id}":"com.mitchellh.ghostty"}}}}"#)
     );
     fs::remove_dir_all(temp_dir).unwrap();
 }
@@ -949,20 +1090,19 @@ fn obvious_non_terminal_does_not_overwrite_existing_terminal_binding() {
     let temp_dir = temp_test_dir();
     let state_dir = temp_dir.join("state");
     let frontmost_state = temp_dir.join("frontmost");
-    let herdr = temp_dir.join("herdr");
-    write_terminal_binding(&state_dir, "w1", "com.mitchellh.ghostty");
+    let herdr = HerdrServer::shared();
+    let workspace = herdr.workspace();
+    let workspace_id = &workspace.workspace_id;
+    write_terminal_binding(&state_dir, workspace_id, "com.mitchellh.ghostty");
     fs::write(&frontmost_state, "com.google.Chrome\n").unwrap();
     write_state_frontmost(&temp_dir);
-    write_executable(&herdr, "#!/bin/sh\nexit 0\n");
 
-    let output = binary()
-        .env("HERDR_BIN_PATH", &herdr)
+    let mut command = binary();
+    herdr.connect(&mut command);
+    let output = command
         .env("HERDR_PLUGIN_STATE_DIR", &state_dir)
         .env("HERDR_PLUGIN_EVENT", "pane.focused")
-        .env(
-            "HERDR_PLUGIN_EVENT_JSON",
-            r#"{"event":"pane.focused","data":{"pane_id":"w1:p2"}}"#,
-        )
+        .env("HERDR_PLUGIN_EVENT_JSON", focused_event(&workspace.pane_id))
         .env("FRONTMOST_STATE", &frontmost_state)
         .env("PATH", path_with_temp_dir(&temp_dir))
         .output()
@@ -975,7 +1115,7 @@ fn obvious_non_terminal_does_not_overwrite_existing_terminal_binding() {
     );
     assert_eq!(
         fs::read_to_string(state_dir.join(TERMINAL_MEMORY)).unwrap(),
-        r#"{"workspaces":{"w1":"com.mitchellh.ghostty"}}"#
+        format!(r#"{{"workspaces":{{"{workspace_id}":"com.mitchellh.ghostty"}}}}"#)
     );
     fs::remove_dir_all(temp_dir).unwrap();
 }
@@ -1024,11 +1164,21 @@ fn write_terminal_binding(state_dir: &Path, workspace: &str, bundle_id: &str) {
 fn config_file_selects_statuses_and_templates() {
     let temp_dir = temp_test_dir();
 
-    let herdr = temp_dir.join("herdr");
-    write_executable(
-        &herdr,
-        "#!/bin/sh\nif [ \"$1 $2\" = \"agent get\" ]; then\n  printf '%s\\n' '{\"result\":{\"agent\":{\"focused\":false,\"pane_id\":\"w1:p2\",\"tab_id\":\"w1:t7\",\"terminal_title\":\"◐ Tidy up\",\"metadata\":{\"ticket\":\"ABC-1\"}}}}'\nelif [ \"$1 $2\" = \"tab get\" ]; then\n  printf '%s\\n' '{\"result\":{\"tab\":{\"label\":\"status\",\"number\":7}}}'\nfi\n",
-    );
+    let herdr = HerdrServer::shared();
+    let workspace = herdr.workspace();
+    let pane = &workspace.pane_id;
+    herdr.rename_tab(&workspace.tab_id, "status");
+    herdr.report_agent(pane, "codex", "working");
+    herdr.set_terminal_title(pane, "◐ Tidy up");
+    herdr.herdr_quiet(&[
+        "pane",
+        "report-metadata",
+        pane,
+        "--source",
+        "test",
+        "--token",
+        "ticket=ABC-1",
+    ]);
     let config_dir = temp_dir.join("config");
     fs::create_dir_all(&config_dir).unwrap();
     fs::write(
@@ -1039,15 +1189,16 @@ fn config_file_selects_statuses_and_templates() {
 
     let notifier_log = write_logging_notifier(&temp_dir);
     let run = |status: &str| {
-        binary()
+        let mut command = binary();
+        herdr.connect(&mut command);
+        command
             .env("HERDR_PLUGIN_EVENT", "pane.agent_status_changed")
             .env(
                 "HERDR_PLUGIN_EVENT_JSON",
                 format!(
-                    r#"{{"data":{{"pane_id":"w1:p2","agent_status":"{status}","agent":"Codex"}}}}"#
+                    r#"{{"data":{{"pane_id":"{pane}","agent_status":"{status}","agent":"Codex"}}}}"#
                 ),
             )
-            .env("HERDR_BIN_PATH", &herdr)
             .env("HERDR_PLUGIN_STATE_DIR", temp_dir.join("state"))
             .env("HERDR_PLUGIN_CONFIG_DIR", &config_dir)
             .env("NOTIFIER_LOG", &notifier_log)
@@ -1110,11 +1261,12 @@ fn init_config_writes_the_example_once() {
 fn blocked_agent_marks_tab_and_agent_name_and_working_or_focus_restores_them() {
     let temp_dir = temp_test_dir();
 
-    let herdr = temp_dir.join("herdr");
-    write_executable(
-        &herdr,
-        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HERDR_LOG\"\nif [ \"$1 $2\" = \"agent get\" ]; then\n  printf '%s\\n' '{\"result\":{\"agent\":{\"focused\":false,\"pane_id\":\"w1:p2\",\"tab_id\":\"w1:t7\"}}}'\nelif [ \"$1 $2\" = \"tab get\" ]; then\n  printf '%s\\n' \"{\\\"result\\\":{\\\"tab\\\":{\\\"label\\\":\\\"$TAB_LABEL\\\",\\\"number\\\":7}}}\"\nfi\n",
-    );
+    let herdr = HerdrServer::shared();
+    let workspace = herdr.workspace();
+    let (pane, tab) = (&workspace.pane_id, &workspace.tab_id);
+    herdr.rename_tab(tab, "status");
+    herdr.report_agent(pane, "claude", "blocked");
+    let logging_herdr = herdr.logging_herdr(&temp_dir);
 
     // No status notifies, so only the markers are under test.
     let config_dir = temp_dir.join("config");
@@ -1124,16 +1276,16 @@ fn blocked_agent_marks_tab_and_agent_name_and_working_or_focus_restores_them() {
     let notifier_log = write_logging_notifier(&temp_dir);
     let herdr_log = temp_dir.join("herdr.log");
     let path = path_with_temp_dir(&temp_dir);
-    let run = |event: &str, json: &str, tab_label: &str| {
-        let output = binary()
+    let run = |event: &str, json: String| {
+        let mut command = binary();
+        herdr.connect_logged(&mut command, &logging_herdr);
+        let output = command
             .env("HERDR_PLUGIN_EVENT", event)
             .env("HERDR_PLUGIN_EVENT_JSON", json)
-            .env("HERDR_BIN_PATH", &herdr)
             .env("HERDR_PLUGIN_CONFIG_DIR", &config_dir)
             .env("HERDR_PLUGIN_STATE_DIR", temp_dir.join("state"))
             .env("NOTIFIER_LOG", &notifier_log)
             .env("HERDR_LOG", &herdr_log)
-            .env("TAB_LABEL", tab_label)
             .env("PATH", &path)
             .output()
             .unwrap();
@@ -1146,35 +1298,39 @@ fn blocked_agent_marks_tab_and_agent_name_and_working_or_focus_restores_them() {
         fs::remove_file(&herdr_log).ok();
         log
     };
+    let status_event = |status: &str, agent: &str| {
+        format!(
+            r#"{{"event":"pane.agent_status_changed","data":{{"pane_id":"{pane}","agent_status":"{status}","agent":"{agent}"}}}}"#
+        )
+    };
 
     let log = run(
         "pane.agent_status_changed",
-        r#"{"event":"pane.agent_status_changed","data":{"pane_id":"w1:p2","agent_status":"blocked","agent":"claude"}}"#,
-        "status",
+        status_event("blocked", "claude"),
     );
-    assert!(log.contains("tab rename w1:t7 ⚠ status\n"), "{log}");
+    assert_eq!(herdr.tab_label(tab), "⚠ status");
     assert!(
-        log.contains("pane report-metadata w1:p2 --source dagadbm --display-agent ⚠ claude\n"),
+        log.contains(&format!(
+            "pane report-metadata {pane} --source dagadbm --display-agent ⚠ claude\n"
+        )),
         "{log}"
     );
 
     let log = run(
         "pane.agent_status_changed",
-        r#"{"event":"pane.agent_status_changed","data":{"pane_id":"w1:p2","agent_status":"working","agent":"⚠ claude"}}"#,
-        "⚠ status",
+        status_event("working", "⚠ claude"),
     );
-    assert!(log.contains("tab rename w1:t7 status\n"), "{log}");
+    assert_eq!(herdr.tab_label(tab), "status");
     assert!(
-        log.contains("pane report-metadata w1:p2 --source dagadbm --clear-display-agent\n"),
+        log.contains(&format!(
+            "pane report-metadata {pane} --source dagadbm --clear-display-agent\n"
+        )),
         "{log}"
     );
 
-    let log = run(
-        "pane.focused",
-        r#"{"event":"pane.focused","data":{"pane_id":"w1:p2"}}"#,
-        "⚠ status",
-    );
-    assert!(log.contains("tab rename w1:t7 status\n"), "{log}");
+    herdr.rename_tab(tab, "⚠ status");
+    run("pane.focused", focused_event(pane));
+    assert_eq!(herdr.tab_label(tab), "status");
 
     fs::remove_dir_all(temp_dir).unwrap();
 }
@@ -1184,11 +1340,13 @@ fn blocked_agent_marks_tab_and_agent_name_and_working_or_focus_restores_them() {
 fn a_repeated_agent_status_notifies_once_and_leaves_herdr_alone() {
     let temp_dir = temp_test_dir();
 
-    let herdr = temp_dir.join("herdr");
-    write_executable(
-        &herdr,
-        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HERDR_LOG\"\nif [ \"$1 $2\" = \"agent get\" ]; then\n  printf '{\"result\":{\"agent\":{\"focused\":false,\"pane_id\":\"%s\",\"tab_id\":\"w1:t7\"}}}\\n' \"$3\"\nelif [ \"$1 $2\" = \"tab get\" ]; then\n  printf '%s\\n' '{\"result\":{\"tab\":{\"label\":\"status\",\"number\":7}}}'\nfi\n",
-    );
+    let herdr = HerdrServer::shared();
+    let workspace = herdr.workspace();
+    let p2 = workspace.pane_id.clone();
+    let p3 = herdr.split(&p2);
+    herdr.report_agent(&p2, "claude", "blocked");
+    herdr.report_agent(&p3, "claude", "blocked");
+    let logging_herdr = herdr.logging_herdr(&temp_dir);
 
     // Appends one line per notification, so repeats are countable.
     let notifier_log = temp_dir.join("notifier.log");
@@ -1207,10 +1365,11 @@ fn a_repeated_agent_status_notifies_once_and_leaves_herdr_alone() {
         let json = format!(
             r#"{{"event":"pane.agent_status_changed","data":{{"pane_id":"{pane}","agent_status":"{status}","agent":"{agent}"}}}}"#
         );
-        let output = binary()
+        let mut command = binary();
+        herdr.connect_logged(&mut command, &logging_herdr);
+        let output = command
             .env("HERDR_PLUGIN_EVENT", "pane.agent_status_changed")
             .env("HERDR_PLUGIN_EVENT_JSON", json)
-            .env("HERDR_BIN_PATH", &herdr)
             .env("HERDR_PLUGIN_CONFIG_DIR", temp_dir.join("config"))
             .env("HERDR_PLUGIN_STATE_DIR", &state_dir)
             .env("NOTIFIER_LOG", &notifier_log)
@@ -1242,65 +1401,58 @@ fn a_repeated_agent_status_notifies_once_and_leaves_herdr_alone() {
         log
     };
 
-    let log = run("w1:p2", "blocked", "claude", true);
+    let log = run(&p2, "blocked", "claude", true);
     assert!(log.contains("--display-agent ⚠ claude\n"), "{log}");
 
     // The echo of the agent marker: same status, marked agent name.
-    let log = run("w1:p2", "blocked", "⚠ claude", false);
+    let log = run(&p2, "blocked", "⚠ claude", false);
     assert_eq!(log, "", "a repeat must not call Herdr");
 
     // Another pane keeps its own last status.
-    run("w1:p3", "blocked", "claude", true);
+    run(&p3, "blocked", "claude", true);
 
     // A real change, and a return to blocked, each notify again.
-    run("w1:p2", "working", "⚠ claude", false);
-    run("w1:p2", "blocked", "claude", true);
+    run(&p2, "working", "⚠ claude", false);
+    run(&p2, "blocked", "claude", true);
 
     // Give a wrongly sent extra notification time to show up.
     std::thread::sleep(std::time::Duration::from_millis(200));
     let notified = fs::read_to_string(&notifier_log).unwrap_or_default();
     assert_eq!(
         notified.lines().collect::<Vec<_>>(),
-        [
-            "herdr-dagadbm-notify-w1-p2",
-            "herdr-dagadbm-notify-w1-p3",
-            "herdr-dagadbm-notify-w1-p2"
-        ],
+        [group(&p2), group(&p3), group(&p2)],
         "{notified}"
     );
 
     fs::remove_dir_all(temp_dir).unwrap();
 }
 
-/// A Herdr session with notifications the test answers: every pane is an
-/// unfocused agent in tab `w1:t7` of workspace `repo`, and the tab label lives
-/// in a file, so the tab marker really renames it. The fake `alerter` logs
-/// each notification as one line of `|`-terminated arguments, then waits for
-/// the test to write what alerter would print into `answer-<group>`; `--list`
-/// prints the file `shown`.
+/// A Herdr session with notifications the test answers. It is a workspace
+/// `repo` on the test Herdr server, with one tab labelled `status`. Tests name
+/// panes `w1:p1`, `w1:p2` and so on; the first name used is the workspace's
+/// pane, and each new name splits off another. Every pane is an unfocused
+/// agent. The fake `alerter` logs each notification as one line of
+/// `|`-terminated arguments, then waits for the test to write what alerter
+/// would print into `answer-<group>`; `--list` prints the file `shown`.
 #[cfg(unix)]
 struct Session {
     dir: PathBuf,
+    herdr: &'static HerdrServer,
+    workspace: support::herdr_server::Workspace,
+    logging_herdr: PathBuf,
+    panes: std::cell::RefCell<std::collections::HashMap<String, String>>,
 }
 
 #[cfg(unix)]
 impl Session {
     fn new(config: &str) -> Self {
         let dir = temp_test_dir();
-        fs::write(dir.join("tab-label"), "status").unwrap();
         fs::create_dir_all(dir.join("config")).unwrap();
         fs::write(dir.join("config/config.toml"), config).unwrap();
-        write_executable(
-            &dir.join("herdr"),
-            r#"#!/bin/sh
-case "$1 $2" in
-  'agent get') printf '{"result":{"agent":{"focused":false,"pane_id":"%s","tab_id":"w1:t7"}}}\n' "$3" ;;
-  'tab get') printf '{"result":{"tab":{"label":"%s","number":7}}}\n' "$(cat "$STUB_DIR/tab-label")" ;;
-  'tab rename') printf '%s' "$4" > "$STUB_DIR/tab-label" ;;
-  'workspace list') echo '{"result":{"workspaces":[{"workspace_id":"w1","label":"repo"}]}}' ;;
-esac
-"#,
-        );
+        let herdr = HerdrServer::shared();
+        let workspace = herdr.workspace_in("repo", Path::new("/tmp"));
+        herdr.rename_tab(&workspace.tab_id, "status");
+        let logging_herdr = herdr.logging_herdr(&dir);
         write_executable(
             &dir.join("alerter"),
             r#"#!/bin/sh
@@ -1345,7 +1497,34 @@ fi
             &dir.join("open"),
             "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$STUB_DIR/open.log\"\n",
         );
-        Self { dir }
+        Self {
+            dir,
+            herdr,
+            workspace,
+            logging_herdr,
+            panes: Default::default(),
+        }
+    }
+
+    /// The real pane ID behind a test's pane name, created on first use.
+    fn pane(&self, name: &str) -> String {
+        if let Some(pane) = self.panes.borrow().get(name) {
+            return pane.clone();
+        }
+        let pane = if self.panes.borrow().is_empty() {
+            self.workspace.pane_id.clone()
+        } else {
+            self.herdr.split(&self.workspace.pane_id)
+        };
+        self.herdr.report_agent(&pane, "codex", "blocked");
+        self.panes
+            .borrow_mut()
+            .insert(name.to_string(), pane.clone());
+        pane
+    }
+
+    fn workspace_id(&self) -> &str {
+        &self.workspace.workspace_id
     }
 
     fn state_dir(&self) -> PathBuf {
@@ -1355,13 +1534,16 @@ fi
     /// `dagadbm notify` in this session, with every stub on `PATH`.
     fn command(&self) -> Command {
         let mut command = binary();
+        self.herdr.connect_logged(&mut command, &self.logging_herdr);
         command
-            .env("HERDR_BIN_PATH", self.dir.join("herdr"))
+            // A click would move the shared server's focus at any time, so
+            // the click socket stays unset. The `herdr` wrapper still finds
+            // the test server.
+            .env_remove("HERDR_SOCKET_PATH")
             .env("HERDR_PLUGIN_STATE_DIR", self.state_dir())
             .env("HERDR_PLUGIN_CONFIG_DIR", self.dir.join("config"))
             .env("NOTIFIER_LOG", self.dir.join("notifier.log"))
             .env("STUB_DIR", &self.dir)
-            .env_remove("HERDR_SOCKET_PATH")
             .env("PATH", path_with_temp_dir(&self.dir));
         command
     }
@@ -1369,14 +1551,16 @@ fi
     /// Runs `--notification-<outcome> <pane> <post_id>`, as a generated
     /// script reports how its notification ended.
     fn report(&self, outcome: &str, pane: &str, post_id: &str) -> std::process::Output {
+        let pane = self.pane(pane);
         self.command()
-            .args([&format!("--notification-{outcome}"), pane, post_id])
+            .args([&format!("--notification-{outcome}"), &pane, post_id])
             .output()
             .unwrap()
     }
 
     /// Sends a `blocked` event for the pane and waits for its notification.
     fn notify(&self, pane: &str) {
+        let pane = &self.pane(pane);
         let before = self.posts().len();
         let output = self
             .command()
@@ -1399,7 +1583,7 @@ fi
 
     /// Makes the notification of `pane` end the way alerter reports `answer`.
     fn answer(&self, pane: &str, answer: &str) {
-        let group = format!("{PREFIX}-{}", pane.replace(':', "-"));
+        let group = group(&self.pane(pane));
         let temp = self.dir.join(format!(".answer-{group}"));
         fs::write(&temp, answer).unwrap();
         fs::rename(temp, self.dir.join(format!("answer-{group}"))).unwrap();
@@ -1415,7 +1599,7 @@ fi
     }
 
     fn posts_for(&self, pane: &str) -> Vec<String> {
-        let group = format!("--group|{PREFIX}-{}|", pane.replace(':', "-"));
+        let group = format!("--group|{}|", group(&self.pane(pane)));
         self.posts()
             .into_iter()
             .filter(|post| post.contains(&group))
@@ -1435,7 +1619,7 @@ fi
     fn record_path(&self, pane: &str) -> PathBuf {
         self.state_dir().join(format!(
             "{PREFIX}.repost.record.{}.json",
-            pane.replace(':', "-")
+            self.pane(pane).replace(':', "-")
         ))
     }
 
@@ -1459,7 +1643,7 @@ fi
 
     fn cleared_marker(&self, pane: &str) -> PathBuf {
         self.state_dir()
-            .join(format!("{PREFIX}-{}.cleared", pane.replace(':', "-")))
+            .join(format!("{}.cleared", group(&self.pane(pane))))
     }
 
     /// Waits until the pane's record has `status`, and fails after 5 s.
@@ -1476,7 +1660,7 @@ fi
     /// Waits until the pane's notification script has exited: its temp
     /// files, named after the `.cleared` marker, are gone.
     fn wait_for_script_end(&self, pane: &str) {
-        let prefix = format!("{PREFIX}-{}.cleared.", pane.replace(':', "-"));
+        let prefix = format!("{}.cleared.", group(&self.pane(pane)));
         for _ in 0..500 {
             let running = fs::read_dir(self.state_dir()).is_ok_and(|entries| {
                 entries
@@ -1496,7 +1680,7 @@ fi
     fn forget_last_status(&self, pane: &str) {
         fs::remove_file(
             self.state_dir()
-                .join(format!("{PREFIX}-{}.last-status", pane.replace(':', "-"))),
+                .join(format!("{}.last-status", group(&self.pane(pane)))),
         )
         .unwrap();
     }
@@ -1537,7 +1721,7 @@ fn the_title_names_the_tab_as_it_was_before_the_marker() {
 
     // The marker renamed the tab before the notification was rendered.
     assert_eq!(
-        fs::read_to_string(session.dir.join("tab-label")).unwrap(),
+        session.herdr.tab_label(&session.workspace.tab_id),
         "⚠ status"
     );
     let post = &session.posts()[0];
@@ -1561,7 +1745,10 @@ fn a_click_reposts_the_notification_it_closed_silently_and_unchanged() {
     // p4 is still on screen, so the click leaves it alone.
     fs::write(
         session.dir.join("shown"),
-        r#"[{"groupID":"herdr-dagadbm-notify-w1-p4","title":"⌂ repo ▸ status"}]"#,
+        format!(
+            r#"[{{"groupID":"{}","title":"⌂ repo ▸ status"}}]"#,
+            group(&session.pane("w1:p4"))
+        ),
     )
     .unwrap();
 
@@ -1581,7 +1768,18 @@ fn a_click_reposts_the_notification_it_closed_silently_and_unchanged() {
     assert!(p3[0].contains("|--sound|Ping|"), "{}", p3[0]);
     // The same stored text, the same group and timeout, and no sound.
     assert_eq!(p3[1], p3[0].replace("--sound|Ping|", ""));
-    assert!(p3[1].contains("--subtitle=Codex · p3|"), "{}", p3[1]);
+    // The subtitle names the pane by the last part of its ID.
+    let p3_name = session
+        .pane("w1:p3")
+        .rsplit(':')
+        .next()
+        .unwrap()
+        .to_string();
+    assert!(
+        p3[1].contains(&format!("--subtitle=Codex · {p3_name}|")),
+        "{}",
+        p3[1]
+    );
     // The re-post is silent and restarts the stored timeout in full (the
     // stub ignores `--timeout`, so only the argument is checked).
     assert!(!p3[1].contains("--sound"), "{}", p3[1]);
@@ -1674,14 +1872,18 @@ fn focusing_the_pane_ends_its_pending_notification_at_once() {
     session.notify("w1:p2");
 
     // The user switches to the terminal that runs Herdr and focuses p3.
-    write_terminal_binding(&session.state_dir(), "w1", "com.example.terminal");
+    write_terminal_binding(
+        &session.state_dir(),
+        session.workspace_id(),
+        "com.example.terminal",
+    );
     fs::write(session.dir.join("frontmost"), "com.example.terminal").unwrap();
     let output = session
         .command()
         .env("HERDR_PLUGIN_EVENT", "pane.focused")
         .env(
             "HERDR_PLUGIN_EVENT_JSON",
-            r#"{"event":"pane.focused","data":{"pane_id":"w1:p3"}}"#,
+            focused_event(&session.pane("w1:p3")),
         )
         .output()
         .unwrap();
@@ -1761,7 +1963,7 @@ fn a_close_reported_just_before_the_click_marker_lands_stays_pending() {
 
     let close = session
         .command()
-        .args(["--notification-closed", "w1:p3", &post_id])
+        .args(["--notification-closed", &session.pane("w1:p3"), &post_id])
         .spawn()
         .unwrap();
     std::thread::sleep(std::time::Duration::from_millis(80));
@@ -1807,9 +2009,11 @@ fn a_claimed_posting_is_not_reposted() {
     session.notify("w1:p2");
     let post_id = session.post_id("w1:p3");
     fs::write(
-        session
-            .state_dir()
-            .join(format!("{PREFIX}.repost.claim.w1-p3.{post_id}")),
+        session.state_dir().join(format!(
+            "{}.claim.{}.{post_id}",
+            repost(),
+            session.pane("w1:p3").replace(':', "-")
+        )),
         "",
     )
     .unwrap();
@@ -1978,14 +2182,22 @@ fn a_stale_click_focuses_and_reposts_others_but_not_its_own_pane() {
     session.answer("w1:p3", "@CLOSED");
     session.wait_for_status("w1:p3", "pending");
 
-    write_terminal_binding(&session.state_dir(), "w1", "com.example.terminal");
+    write_terminal_binding(
+        &session.state_dir(),
+        session.workspace_id(),
+        "com.example.terminal",
+    );
+    let p2 = session.pane("w1:p2");
     let (socket_path, socket_handle) = focus_socket(
-        "w1:p2",
-        r#"{"id":"dagadbm:focus","result":{"type":"pane_info","pane":{"pane_id":"w1:p2","workspace_id":"w1"}}}"#,
+        &p2,
+        &format!(
+            r#"{{"id":"dagadbm:focus","result":{{"type":"pane_info","pane":{{"pane_id":"{p2}","workspace_id":"{}"}}}}}}"#,
+            session.workspace_id()
+        ),
     );
     let output = session
         .command()
-        .args(["--notification-clicked", "w1:p2", "stale-post"])
+        .args(["--notification-clicked", &p2, "stale-post"])
         .env("HERDR_SOCKET_PATH", &socket_path)
         .output()
         .unwrap();

@@ -181,61 +181,77 @@ mod tests {
         assert_eq!(unmarked_label(" ⚠ tab", "⚠"), None);
     }
 
-    /// A fake `herdr`: logs each call's arguments, `|`-separated, one call per
-    /// line; answers `tab get` with the label in `label` and `agent get` with a
-    /// focused pane in tab `w1:t1`; `tab rename` updates `label`.
-    struct StubHerdr {
+    /// A workspace on the test Herdr server whose tab has `label`, with an
+    /// agent in its pane, reached through a `herdr` that records its calls.
+    /// The calls name the tab `w1:t1` and the pane `w1:p2`, whatever their
+    /// real IDs, so the expectations read the same in every run.
+    struct TestHerdr {
         dir: std::path::PathBuf,
+        workspace: crate::test_herdr::Workspace,
     }
 
-    impl StubHerdr {
+    impl TestHerdr {
         fn new(name: &str, label: &str) -> Self {
+            let server = crate::test_herdr::HerdrServer::shared();
             let dir = std::env::temp_dir()
                 .join(format!("dagadbm-tab-marker-{name}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&dir);
             std::fs::create_dir_all(&dir).unwrap();
-            std::fs::write(dir.join("label"), label).unwrap();
-            let script = format!(
-                r#"#!/bin/sh
-dir='{dir}'
-printf '%s|' "$@" >> "$dir/log"
-echo >> "$dir/log"
-case "$1 $2" in
-  "tab get") printf '{{"result":{{"tab":{{"label":"%s","number":1}}}}}}' "$(cat "$dir/label")" ;;
-  "tab rename") printf '%s' "$4" > "$dir/label" ;;
-  "agent get") printf '{{"result":{{"agent":{{"focused":true,"pane_id":"%s","tab_id":"w1:t1"}}}}}}' "$3" ;;
-esac
-"#,
-                dir = dir.display()
-            );
-            let bin = dir.join("herdr");
-            std::fs::write(&bin, script).unwrap();
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
-            Self { dir }
+            let workspace = server.workspace();
+            server.rename_tab(&workspace.tab_id, label);
+            server.report_agent(&workspace.pane_id, "claude", "blocked");
+            server.recording_herdr(&dir, &dir.join("log"));
+            Self { dir, workspace }
         }
 
         fn bin(&self) -> String {
             self.dir.join("herdr").to_str().unwrap().to_string()
         }
 
-        fn label(&self) -> String {
-            std::fs::read_to_string(self.dir.join("label")).unwrap()
+        fn pane(&self) -> &str {
+            &self.workspace.pane_id
         }
 
-        /// The logged calls, and forgets them.
+        fn label(&self) -> String {
+            crate::test_herdr::HerdrServer::shared().tab_label(&self.workspace.tab_id)
+        }
+
+        fn event(&self, status: &str, agent: &str) -> StatusEvent {
+            StatusEvent {
+                pane_id: self.pane().to_string(),
+                status: status.to_string(),
+                agent: (!agent.is_empty()).then(|| agent.to_string()),
+                agent_id: None,
+                terminal_title: None,
+                state_label: None,
+            }
+        }
+
+        fn in_tab(&self, focused: bool) -> PaneDetails {
+            PaneDetails::in_tab(Some(&self.workspace.tab_id), focused)
+        }
+
+        fn unfocused_in_tab(&self) -> PaneDetails {
+            self.in_tab(false)
+        }
+
+        /// The recorded calls, and forgets them.
         fn take_calls(&self) -> Vec<String> {
             let log = self.dir.join("log");
             let calls = std::fs::read_to_string(&log).unwrap_or_default();
             let _ = std::fs::remove_file(&log);
             calls
                 .lines()
-                .map(|line| line.trim_end_matches('|').to_string())
+                .map(|line| {
+                    line.trim_end_matches('|')
+                        .replace(&format!("|{}", self.workspace.tab_id), "|w1:t1")
+                        .replace(&format!("|{}", self.workspace.pane_id), "|w1:p2")
+                })
                 .collect()
         }
     }
 
-    impl Drop for StubHerdr {
+    impl Drop for TestHerdr {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.dir);
         }
@@ -245,30 +261,15 @@ esac
         Instant::now() + Duration::from_secs(5)
     }
 
-    fn event(status: &str, agent: &str) -> StatusEvent {
-        StatusEvent {
-            pane_id: "w1:p2".to_string(),
-            status: status.to_string(),
-            agent: (!agent.is_empty()).then(|| agent.to_string()),
-            agent_id: None,
-            terminal_title: None,
-            state_label: None,
-        }
-    }
-
-    fn unfocused_in_tab() -> PaneDetails {
-        PaneDetails::in_tab(Some("w1:t1"), false)
-    }
-
     #[test]
     fn a_blocked_agent_marks_its_tab_and_agent_name() {
-        let herdr = StubHerdr::new("blocked", "mobile zsh");
+        let herdr = TestHerdr::new("blocked", "mobile zsh");
         let config = NotifyConfig::default();
 
         let original = sync_for_status(
             &config,
-            &event("blocked", "claude"),
-            &unfocused_in_tab(),
+            &herdr.event("blocked", "claude"),
+            &herdr.unfocused_in_tab(),
             &herdr.bin(),
             deadline(),
         );
@@ -288,12 +289,12 @@ esac
 
     #[test]
     fn an_agent_back_at_work_gets_its_original_tab_label_and_agent_name_back() {
-        let herdr = StubHerdr::new("working", "⚠ mobile zsh");
+        let herdr = TestHerdr::new("working", "⚠ mobile zsh");
 
         sync_for_status(
             &NotifyConfig::default(),
-            &event("working", "⚠ claude"),
-            &unfocused_in_tab(),
+            &herdr.event("working", "⚠ claude"),
+            &herdr.unfocused_in_tab(),
             &herdr.bin(),
             deadline(),
         );
@@ -311,13 +312,13 @@ esac
 
     #[test]
     fn marking_then_moving_on_restores_the_exact_label() {
-        let herdr = StubHerdr::new("round-trip", "  my tab ⚠ x");
+        let herdr = TestHerdr::new("round-trip", "  my tab ⚠ x");
         let config = NotifyConfig::default();
-        let details = unfocused_in_tab();
+        let details = herdr.unfocused_in_tab();
 
         sync_for_status(
             &config,
-            &event("done", "codex"),
+            &herdr.event("done", "codex"),
             &details,
             &herdr.bin(),
             deadline(),
@@ -325,7 +326,7 @@ esac
         assert_eq!(herdr.label(), "⚠   my tab ⚠ x");
         sync_for_status(
             &config,
-            &event("working", "⚠ codex"),
+            &herdr.event("working", "⚠ codex"),
             &details,
             &herdr.bin(),
             deadline(),
@@ -335,9 +336,9 @@ esac
 
     #[test]
     fn focusing_the_pane_clears_both_markers() {
-        let herdr = StubHerdr::new("focus", "⚠ 3");
+        let herdr = TestHerdr::new("focus", "⚠ 3");
 
-        clear_for_focus(&NotifyConfig::default(), "w1:p2", &herdr.bin());
+        clear_for_focus(&NotifyConfig::default(), herdr.pane(), &herdr.bin());
 
         assert_eq!(
             herdr.take_calls(),
@@ -353,26 +354,26 @@ esac
 
     #[test]
     fn focusing_with_both_markers_off_calls_nothing() {
-        let herdr = StubHerdr::new("focus-off", "⚠ 3");
+        let herdr = TestHerdr::new("focus-off", "⚠ 3");
         let mut config = NotifyConfig::default();
         config.tab_marker.enabled = false;
         config.agent_marker.enabled = false;
 
-        clear_for_focus(&config, "w1:p2", &herdr.bin());
+        clear_for_focus(&config, herdr.pane(), &herdr.bin());
 
         assert!(herdr.take_calls().is_empty());
     }
 
     #[test]
     fn a_disabled_tab_marker_leaves_the_tab_alone() {
-        let herdr = StubHerdr::new("tab-off", "mobile");
+        let herdr = TestHerdr::new("tab-off", "mobile");
         let mut config = NotifyConfig::default();
         config.tab_marker.enabled = false;
 
         sync_for_status(
             &config,
-            &event("blocked", "claude"),
-            &unfocused_in_tab(),
+            &herdr.event("blocked", "claude"),
+            &herdr.unfocused_in_tab(),
             &herdr.bin(),
             deadline(),
         );
@@ -385,14 +386,14 @@ esac
 
     #[test]
     fn a_disabled_agent_marker_leaves_the_agent_name_alone() {
-        let herdr = StubHerdr::new("agent-off", "mobile");
+        let herdr = TestHerdr::new("agent-off", "mobile");
         let mut config = NotifyConfig::default();
         config.agent_marker.enabled = false;
 
         sync_for_status(
             &config,
-            &event("blocked", "claude"),
-            &unfocused_in_tab(),
+            &herdr.event("blocked", "claude"),
+            &herdr.unfocused_in_tab(),
             &herdr.bin(),
             deadline(),
         );
@@ -405,12 +406,12 @@ esac
 
     #[test]
     fn a_focused_pane_is_not_marked() {
-        let herdr = StubHerdr::new("focused", "mobile");
+        let herdr = TestHerdr::new("focused", "mobile");
 
         sync_for_status(
             &NotifyConfig::default(),
-            &event("blocked", "claude"),
-            &PaneDetails::in_tab(Some("w1:t1"), true),
+            &herdr.event("blocked", "claude"),
+            &herdr.in_tab(true),
             &herdr.bin(),
             deadline(),
         );
@@ -422,12 +423,12 @@ esac
 
     #[test]
     fn a_status_that_is_not_marked_changes_nothing_unmarked() {
-        let herdr = StubHerdr::new("unlisted", "mobile");
+        let herdr = TestHerdr::new("unlisted", "mobile");
 
         sync_for_status(
             &NotifyConfig::default(),
-            &event("working", "claude"),
-            &unfocused_in_tab(),
+            &herdr.event("working", "claude"),
+            &herdr.unfocused_in_tab(),
             &herdr.bin(),
             deadline(),
         );
@@ -437,11 +438,11 @@ esac
 
     #[test]
     fn a_pane_without_a_tab_only_marks_the_agent() {
-        let herdr = StubHerdr::new("no-tab", "mobile");
+        let herdr = TestHerdr::new("no-tab", "mobile");
 
         sync_for_status(
             &NotifyConfig::default(),
-            &event("blocked", "claude"),
+            &herdr.event("blocked", "claude"),
             &PaneDetails::in_tab(None, false),
             &herdr.bin(),
             deadline(),
@@ -455,12 +456,12 @@ esac
 
     #[test]
     fn an_already_marked_tab_and_agent_are_not_marked_again() {
-        let herdr = StubHerdr::new("already", "⚠ mobile");
+        let herdr = TestHerdr::new("already", "⚠ mobile");
 
         let original = sync_for_status(
             &NotifyConfig::default(),
-            &event("blocked", "⚠ claude"),
-            &unfocused_in_tab(),
+            &herdr.event("blocked", "⚠ claude"),
+            &herdr.unfocused_in_tab(),
             &herdr.bin(),
             deadline(),
         );
@@ -473,21 +474,21 @@ esac
 
     #[test]
     fn an_event_without_an_agent_reports_no_agent_name() {
-        let herdr = StubHerdr::new("no-agent", "mobile");
+        let herdr = TestHerdr::new("no-agent", "mobile");
         let mut config = NotifyConfig::default();
         config.tab_marker.enabled = false;
 
         sync_for_status(
             &config,
-            &event("blocked", ""),
-            &unfocused_in_tab(),
+            &herdr.event("blocked", ""),
+            &herdr.unfocused_in_tab(),
             &herdr.bin(),
             deadline(),
         );
         sync_for_status(
             &config,
-            &event("working", ""),
-            &unfocused_in_tab(),
+            &herdr.event("working", ""),
+            &herdr.unfocused_in_tab(),
             &herdr.bin(),
             deadline(),
         );
