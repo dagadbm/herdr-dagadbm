@@ -1,6 +1,6 @@
 #!/bin/sh
 # Blocks a push unless formatting, lints and tests all pass.
-# Enable once per clone: git config core.hooksPath .githooks
+# Installed into .git/hooks by cargo-husky on the next `cargo test`.
 # Skip in an emergency: git push --no-verify
 set -eu
 

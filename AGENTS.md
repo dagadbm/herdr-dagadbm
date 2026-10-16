@@ -17,6 +17,7 @@ A Herdr plugin (`herdr-plugin.toml`, id `dagadbm`) written in Rust. It is macOS 
 
 ```sh
 # Format, lint and test. All three must be clean before committing.
+# The first `cargo test` in a clone installs the pre-push hook (cargo-husky, .cargo-husky/hooks/).
 # Tests that need Herdr start their own isolated server (needs herdr installed).
 cargo fmt && cargo clippy --all-targets && cargo test
 
