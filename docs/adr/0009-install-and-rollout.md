@@ -15,9 +15,9 @@ The plugin needs an id, a repository, a development loop, and a way to replace t
 - The plugin id is `dagadbm`, and the repository is `dagadbm/herdr-dagadbm`.
 - For development, build the binary, then link the plugin: `cargo build --release && herdr plugin link .`. Linking does not run the build.
 - The plugin is installed from GitHub with `herdr plugin install --yes dagadbm/herdr-dagadbm`. Herdr refuses to install over a linked plugin, so `herdr plugin unlink dagadbm` comes first when switching from development.
-- herdr-focus-notify is uninstalled. `~/dotfiles/herdr-update.sh` uninstalls it and installs dagadbm instead.
+- herdr-focus-notify is uninstalled. `~/dotfiles/herdr-update.sh` uninstalls it and installs herdr-dagadbm instead.
 - The dotfiles do not manage the plugin's config file. The defaults live in the plugin, and a user who wants changes writes the file with `notify-init-config`.
-- `ui.toast.delivery` stays `"off"` in Herdr's config, so Herdr's own toasts do not duplicate this plugin's notifications. Its comment names dagadbm.
+- `ui.toast.delivery` stays `"off"` in Herdr's config, so Herdr's own toasts do not duplicate this plugin's notifications. Its comment names herdr-dagadbm.
 
 ## Consequences
 

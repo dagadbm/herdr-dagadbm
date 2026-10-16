@@ -4,7 +4,7 @@ Date: 2026-10-15
 
 ## Status
 
-Accepted. ADR 8 was merged into this ADR on 2026-10-16.
+Accepted
 
 ## Context
 
