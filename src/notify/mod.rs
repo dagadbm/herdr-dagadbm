@@ -8,8 +8,10 @@ mod executable;
 mod focus;
 mod git;
 mod icons;
+mod ledger;
 mod notification;
 mod notifier;
+mod outcome;
 mod script;
 mod state;
 mod tab_marker;
@@ -20,7 +22,7 @@ mod util;
 use std::env;
 use std::time::{Duration, Instant};
 
-use cli::{parse_cli_args, print_usage, CliAction};
+use cli::{parse_cli_args, print_usage, CliAction, Outcome};
 use event::{
     focused_pane_id_from_event_json, render_notification, status_event_from_json, token_values,
     StatusEvent,
@@ -31,7 +33,10 @@ use focus::{
     pane_details, pane_labels, should_clear_notification_on_focus, NotificationDecision,
 };
 use notifier::{remove_notification, resolve_notifier_bin, send_notification};
-use script::{rewrite_generated_scripts_without_activation, write_focus_script, AlerterOptions};
+use script::{
+    rewrite_generated_scripts_without_activation, test_timeout_secs, write_focus_script,
+    AlerterOptions,
+};
 use state::{
     cleanup_stale_state_files, clear_terminal_bindings, mark_notification_cleared,
     prune_stale_workspace_bindings, record_status, reset_notification_clearance,
@@ -86,6 +91,13 @@ where
         }
         CliAction::FocusPane(pane_id) => {
             return focus::focus_pane(&pane_id);
+        }
+        CliAction::NotificationEnded(how, pane_id, post_id) => {
+            return match how {
+                Outcome::Clicked => outcome::clicked(&pane_id, &post_id),
+                Outcome::Closed => outcome::closed(&pane_id, &post_id),
+                Outcome::Ended => outcome::ended(&pane_id, &post_id),
+            };
         }
         CliAction::CheckPaneVisibility(pane_id) => {
             let herdr_bin = resolve_herdr_bin()?;
@@ -143,8 +155,11 @@ where
     let deadline = Instant::now() + LOOKUP_BUDGET;
     let details = pane_details(&event.pane_id, &herdr_bin, deadline).unwrap_or_default();
 
+    // The tab label is read before the marker changes it, so the
+    // notification names the tab rather than the marker.
+    let mut tab_label = None;
     if !test_mode {
-        tab_marker::sync_for_status(&config, &event, &details, &herdr_bin, deadline);
+        tab_label = tab_marker::sync_for_status(&config, &event, &details, &herdr_bin, deadline);
         if !config.status_is_enabled(&event.status) {
             return Ok(());
         }
@@ -166,7 +181,7 @@ where
     // notifier fails without paying for them.
     let notifier_bin = resolve_notifier_bin()?;
 
-    let labels = pane_labels(&event.pane_id, details, &herdr_bin, deadline);
+    let labels = pane_labels(&event.pane_id, details, tab_label, &herdr_bin, deadline);
     let mut values = token_values(&event, labels, util::hostname());
     if let Some(icon) = config.state_icon(&event.status) {
         values.builtins.insert("state_icon", icon.to_string());
@@ -177,16 +192,28 @@ where
         .map_err(|err| format!("failed to reset notification clearance: {err}"))?;
 
     let options = AlerterOptions {
-        timeout_secs: config.timeout_secs,
+        timeout_secs: if test_mode {
+            test_timeout_secs(config.timeout_secs)
+        } else {
+            config.timeout_secs
+        },
         sound: config.sound.clone(),
     };
+    let monitor_visibility = decision == NotificationDecision::SendWithVisibilityMonitor;
+
+    // The ledger keeps the notification as sent, so a click that closes it by
+    // mistake can post it again (ADR 13). Best-effort: without the record the
+    // notification still goes out, it just cannot come back.
+    let record = ledger::Record::new(notification, options.timeout_secs, monitor_visibility);
+    let _ = ledger::save(&record);
+
     let script_path = write_focus_script(
-        &notification,
+        &record.notification,
+        &record.post_id,
         &herdr_bin,
         &notifier_bin,
         &options,
-        decision == NotificationDecision::SendWithVisibilityMonitor,
-        test_mode,
+        monitor_visibility,
     )
     .map_err(|err| format!("failed to write focus script: {err}"))?;
 
@@ -221,6 +248,7 @@ fn handle_pane_focused(
         let notifier_bin = resolve_notifier_bin()?;
         mark_notification_cleared(&pane_id)
             .map_err(|err| format!("failed to mark notification as cleared: {err}"))?;
+        let _ = ledger::resolve(&pane_id, None, ledger::Status::Done);
         remove_notification(&pane_id, &notifier_bin)
             .map_err(|err| format!("failed to remove notification: {err}"))?;
     }

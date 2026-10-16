@@ -8,6 +8,16 @@ pub(crate) enum CliAction {
     ClearTerminalBindings,
     CheckPaneVisibility(String),
     FocusPane(String),
+    /// How a notification ended, reported by its generated script with the
+    /// pane and the posting.
+    NotificationEnded(Outcome, String, String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Outcome {
+    Clicked,
+    Closed,
+    Ended,
 }
 
 /// Parses the arguments after `dagadbm notify`.
@@ -41,6 +51,27 @@ where
                 } else {
                     CliAction::CheckPaneVisibility(pane_id.as_ref().to_string())
                 };
+            }
+            "--notification-clicked" | "--notification-closed" | "--notification-ended" => {
+                if action != CliAction::Event {
+                    return Err(format!("cannot combine {arg} with another command"));
+                }
+                let outcome = match arg {
+                    "--notification-clicked" => Outcome::Clicked,
+                    "--notification-closed" => Outcome::Closed,
+                    _ => Outcome::Ended,
+                };
+                let pane_id = args
+                    .next()
+                    .ok_or_else(|| format!("missing pane ID after {arg}"))?;
+                let post_id = args
+                    .next()
+                    .ok_or_else(|| format!("missing posting ID after {arg}"))?;
+                action = CliAction::NotificationEnded(
+                    outcome,
+                    pane_id.as_ref().to_string(),
+                    post_id.as_ref().to_string(),
+                );
             }
             _ => {
                 return Err(format!(
@@ -95,6 +126,22 @@ mod tests {
             parse_cli_args(["--check-pane-visibility", "w1:p2"]).unwrap(),
             CliAction::CheckPaneVisibility("w1:p2".to_string())
         );
+        assert_eq!(
+            parse_cli_args(["--notification-clicked", "w1:p2", "1-2-3"]).unwrap(),
+            CliAction::NotificationEnded(
+                Outcome::Clicked,
+                "w1:p2".to_string(),
+                "1-2-3".to_string()
+            )
+        );
+        assert_eq!(
+            parse_cli_args(["--notification-closed", "w1:p2", "1-2-3"]).unwrap(),
+            CliAction::NotificationEnded(Outcome::Closed, "w1:p2".to_string(), "1-2-3".to_string())
+        );
+        assert_eq!(
+            parse_cli_args(["--notification-ended", "w1:p2", "1-2-3"]).unwrap(),
+            CliAction::NotificationEnded(Outcome::Ended, "w1:p2".to_string(), "1-2-3".to_string())
+        );
     }
 
     #[test]
@@ -102,5 +149,7 @@ mod tests {
         assert!(parse_cli_args(["--wat"]).is_err());
         assert!(parse_cli_args(["--test", "--help"]).is_err());
         assert!(parse_cli_args(["--check-pane-visibility"]).is_err());
+        assert!(parse_cli_args(["--notification-closed", "w1:p2"]).is_err());
+        assert!(parse_cli_args(["--test", "--notification-ended", "w1:p2", "1"]).is_err());
     }
 }

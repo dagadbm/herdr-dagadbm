@@ -127,8 +127,24 @@ pub(crate) fn sanitize_group_id(value: &str) -> String {
         .collect()
 }
 
+/// The sub-plugin name (ADR 14). Every file, folder, alerter group and
+/// temporary directory that `notify` creates starts with it.
+pub(crate) const PREFIX: &str = "herdr-dagadbm-notify";
+
+/// `<PREFIX>-<name>`, the shape of every runtime name `notify` creates.
+pub(crate) fn prefixed(name: &str) -> String {
+    format!("{PREFIX}-{name}")
+}
+
+/// Whether `value` starts like a group from `notification_group_id`.
+pub(crate) fn is_notification_group_id(value: &str) -> bool {
+    value
+        .strip_prefix(PREFIX)
+        .is_some_and(|rest| rest.starts_with('-'))
+}
+
 pub(crate) fn notification_group_id(pane_id: &str) -> String {
-    format!("herdr-{}", sanitize_group_id(pane_id))
+    prefixed(&sanitize_group_id(pane_id))
 }
 
 /// The workspace part of a pane id, e.g. `w1:p3` -> `w1`.

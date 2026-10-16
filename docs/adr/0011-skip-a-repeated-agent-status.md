@@ -14,7 +14,7 @@ Herdr starts a new plugin process for each event, so the plugin cannot keep the 
 
 ## Decision
 
-The `notify` feature saves the last agent status of each pane in `$HERDR_PLUGIN_STATE_DIR/herdr-<pane>.last-status`. An event with the same status as the saved one is skipped before any Herdr call: no markers and no notification.
+The `notify` feature saves the last agent status of each pane in `$HERDR_PLUGIN_STATE_DIR/herdr-dagadbm-notify-<pane>.last-status`. An event with the same status as the saved one is skipped before any Herdr call: no markers and no notification.
 
 - The status is saved before the markers write to Herdr, so the echo of that write always finds it.
 - Every real change still counts, so `blocked`, `working`, `blocked` notifies twice.

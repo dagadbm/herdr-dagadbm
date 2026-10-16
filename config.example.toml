@@ -17,10 +17,6 @@ title = "⌂ {workspace} ▸ {tab}"
 subtitle = ""   # empty: no subtitle line
 message = "{state_icon} {terminal_title_stripped}"
 
-# Button that focuses the pane, and the dismiss button.
-action_label = "Focus"
-close_label = "Dismiss"
-
 # An alerter sound name such as "default" or "Ping"; empty plays no sound.
 sound = ""
 

@@ -4,7 +4,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use crate::notify::util::notification_group_id;
+use crate::notify::util::{notification_group_id, prefixed, PREFIX};
 
 const GENERATED_SCRIPT_RETENTION: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 const TEMP_FILE_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
@@ -13,7 +13,7 @@ const FOCUS_ORIGIN_RETENTION: Duration = Duration::from_secs(15);
 pub(crate) fn plugin_state_dir() -> PathBuf {
     env::var_os("HERDR_PLUGIN_STATE_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|| env::temp_dir().join("dagadbm"))
+        .unwrap_or_else(|| env::temp_dir().join(PREFIX))
 }
 
 /// The most recently used terminal (learned from `pane.focused` events) is
@@ -80,10 +80,16 @@ pub(crate) fn clear_focus_origin(workspace: &str) -> io::Result<()> {
 }
 
 pub(crate) fn focus_origin_marker_path(workspace: &str) -> PathBuf {
-    plugin_state_dir().join(format!(
+    plugin_state_dir().join(prefixed(&format!(
         "focus-origin-{}.marker",
         crate::notify::util::sanitize_group_id(workspace)
-    ))
+    )))
+}
+
+fn is_focus_origin_marker(name: &str) -> bool {
+    name.strip_prefix(PREFIX)
+        .is_some_and(|rest| rest.starts_with("-focus-origin-"))
+        && name.ends_with(".marker")
 }
 
 fn clear_focus_origin_markers() -> io::Result<()> {
@@ -99,7 +105,7 @@ fn clear_focus_origin_markers() -> io::Result<()> {
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
-        if name.starts_with("focus-origin-") && name.ends_with(".marker") && path.is_file() {
+        if is_focus_origin_marker(name) && path.is_file() {
             fs::remove_file(path)?;
         }
     }
@@ -137,8 +143,11 @@ fn remember_bindings_into(
     dir: &Path,
     bindings: &std::collections::HashMap<String, String>,
 ) -> io::Result<()> {
-    let path = dir.join("terminal-memory.json");
-    let temp_path = dir.join(format!(".terminal-memory-{}.tmp", std::process::id()));
+    let path = dir.join(terminal_memory_name());
+    let temp_path = dir.join(prefixed(&format!(
+        "terminal-memory-{}.tmp",
+        std::process::id()
+    )));
     let json = serde_json::json!({ "workspaces": bindings });
     fs::write(
         &temp_path,
@@ -148,7 +157,7 @@ fn remember_bindings_into(
 }
 
 fn remember_terminal_into(dir: &Path, workspace: &str, bundle_id: &str) -> io::Result<()> {
-    let path = dir.join("terminal-memory.json");
+    let path = dir.join(terminal_memory_name());
 
     // Read existing bindings so other workspaces survive the rewrite.
     let mut bindings = read_terminal_bindings_from(&path).unwrap_or_default();
@@ -175,7 +184,11 @@ fn read_terminal_bindings_from(path: &Path) -> Option<std::collections::HashMap<
 }
 
 fn terminal_memory_path() -> PathBuf {
-    plugin_state_dir().join("terminal-memory.json")
+    plugin_state_dir().join(terminal_memory_name())
+}
+
+fn terminal_memory_name() -> String {
+    prefixed("terminal-memory.json")
 }
 
 pub(crate) fn is_obvious_non_terminal_bundle(bundle_id: &str) -> bool {
@@ -235,6 +248,7 @@ fn last_status_path(pane_id: &str) -> PathBuf {
 }
 
 pub(crate) fn cleanup_stale_state_files() -> io::Result<()> {
+    let _ = remove_legacy_state_in(&plugin_state_dir());
     cleanup_stale_state_files_in(
         &plugin_state_dir(),
         SystemTime::now(),
@@ -248,26 +262,115 @@ pub(crate) fn cleanup_stale_state_files() -> io::Result<()> {
 /// not managed by cleanup. Cleared markers only gate the gap between a new
 /// notification being queued and its script starting (seconds); every send
 /// resets the marker first, so any marker old enough to be stale here is
-/// inert.
+/// inert. Ledger records, their re-post claims and the click marker are kept
+/// a day, like the last statuses.
 fn retention_for(
     name: &str,
     script_retention: Duration,
     temp_file_retention: Duration,
     focus_origin_retention: Duration,
 ) -> Option<Duration> {
-    if name.starts_with("focus-") && name.ends_with(".sh") {
+    if crate::notify::script::is_generated_script(name) {
         Some(script_retention)
-    } else if name.starts_with("focus-origin-") && name.ends_with(".marker") {
+    } else if is_focus_origin_marker(name) {
         Some(focus_origin_retention)
+    } else if !name.starts_with(PREFIX) && !crate::notify::ledger::is_ledger_file(name) {
+        None
     } else if name.contains(".result.")
         || name.contains(".status.")
         || name.ends_with(".cleared")
         || name.ends_with(".last-status")
+        || crate::notify::ledger::is_ledger_file(name)
     {
         Some(temp_file_retention)
     } else {
         None
     }
+}
+
+/// Whether `name` is a state file from before every name started with the
+/// sub-plugin name (ADR 14): `herdr-<pane>.*`, `focus-<hash>.sh`,
+/// `.focus-<hash>.<pid>.tmp`, `focus-origin-<ws>.marker` and the terminal
+/// memory with its temp file.
+fn is_legacy_state_file(name: &str) -> bool {
+    let is_hex = |value: &str| value.len() == 16 && value.bytes().all(|b| b.is_ascii_hexdigit());
+    let is_digits = |value: &str| !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit());
+
+    if let Some(rest) = name.strip_prefix("herdr-") {
+        if name.starts_with(PREFIX) {
+            return false;
+        }
+        return rest.ends_with(".cleared")
+            || rest.ends_with(".last-status")
+            || rest.ends_with(".notification.json")
+            || rest.ends_with(".repost")
+            || rest.contains(".result.")
+            || rest.contains(".status.");
+    }
+    if let Some(rest) = name.strip_prefix(".herdr-") {
+        // The ledger's temp record of an old group.
+        return !rest.starts_with(&PREFIX["herdr-".len()..])
+            && rest.contains(".notification.json.")
+            && rest.ends_with(".tmp");
+    }
+    if let Some(hash) = name
+        .strip_prefix("focus-")
+        .and_then(|rest| rest.strip_suffix(".sh"))
+    {
+        return is_hex(hash);
+    }
+    if let Some((hash, pid)) = name
+        .strip_prefix(".focus-")
+        .and_then(|rest| rest.strip_suffix(".tmp"))
+        .and_then(|rest| rest.split_once('.'))
+    {
+        return is_hex(hash) && is_digits(pid);
+    }
+    if name.starts_with("focus-origin-") && name.ends_with(".marker") {
+        return true;
+    }
+    if let Some(pid) = name
+        .strip_prefix(".terminal-memory-")
+        .and_then(|rest| rest.strip_suffix(".tmp"))
+    {
+        return is_digits(pid);
+    }
+    false
+}
+
+/// Moves state from the names used before ADR 14 out of the way: the terminal
+/// memory is renamed so bindings survive, the icons folder is removed (icons
+/// are rewritten on demand) and every other old file is deleted.
+fn remove_legacy_state_in(state_dir: &Path) -> io::Result<()> {
+    let old_memory = state_dir.join("terminal-memory.json");
+    if old_memory.is_file() {
+        let new_memory = state_dir.join(terminal_memory_name());
+        if new_memory.exists() {
+            fs::remove_file(&old_memory)?;
+        } else {
+            fs::rename(&old_memory, new_memory)?;
+        }
+    }
+    let old_icons = state_dir.join("icons");
+    if old_icons.is_dir() {
+        fs::remove_dir_all(old_icons)?;
+    }
+
+    let entries = match fs::read_dir(state_dir) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(err),
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if is_legacy_state_file(name) && path.is_file() {
+            let _ = fs::remove_file(&path);
+        }
+    }
+    Ok(())
 }
 
 fn cleanup_stale_state_files_in(
@@ -329,7 +432,7 @@ mod tests {
     fn a_repeated_status_is_not_a_change() {
         let dir = std::env::temp_dir().join(format!("dagadbm-status-test-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("herdr-w1-p1.last-status");
+        let path = dir.join(prefixed("w1-p1.last-status"));
 
         assert!(record_status_at(&path, "blocked").unwrap());
         assert!(!record_status_at(&path, "blocked").unwrap());
@@ -342,14 +445,24 @@ mod tests {
     #[test]
     fn cleanup_removes_only_generated_state_files() {
         let dir = std::env::temp_dir().join(format!("dagadbm-state-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("focus-old.sh"), "old").unwrap();
-        fs::write(dir.join("herdr-w1-p1.result.123456"), "old").unwrap();
-        fs::write(dir.join("herdr-w1-p1.status.123456"), "old").unwrap();
-        fs::write(dir.join("herdr-w1-p1.cleared"), "old").unwrap();
-        fs::write(dir.join("herdr-w1-p1.last-status"), "old").unwrap();
-        fs::write(dir.join("focus-origin-w1.marker"), "old").unwrap();
+        let removed = [
+            prefixed("focus-0123456789abcdef.sh"),
+            prefixed("w1-p1.cleared.result.123456"),
+            prefixed("w1-p1.cleared.status.123456"),
+            prefixed("w1-p1.cleared"),
+            prefixed("w1-p1.last-status"),
+            prefixed("focus-origin-w1.marker"),
+            "herdr-dagadbm-notify.repost.record.w1-p1.json".to_string(),
+            "herdr-dagadbm-notify.repost.claim.w1-p1.1-2-3".to_string(),
+            "herdr-dagadbm-notify.repost.click".to_string(),
+        ];
+        for name in &removed {
+            fs::write(dir.join(name), "old").unwrap();
+        }
         fs::write(dir.join("focus-click.log"), "keep").unwrap();
+        fs::write(dir.join("other.cleared"), "keep").unwrap();
 
         cleanup_stale_state_files_in(
             &dir,
@@ -360,13 +473,66 @@ mod tests {
         )
         .unwrap();
 
-        assert!(!dir.join("focus-old.sh").exists());
-        assert!(!dir.join("herdr-w1-p1.result.123456").exists());
-        assert!(!dir.join("herdr-w1-p1.status.123456").exists());
-        assert!(!dir.join("herdr-w1-p1.cleared").exists());
-        assert!(!dir.join("herdr-w1-p1.last-status").exists());
-        assert!(!dir.join("focus-origin-w1.marker").exists());
+        for name in &removed {
+            assert!(!dir.join(name).exists(), "{name}");
+        }
         assert!(dir.join("focus-click.log").exists());
+        assert!(dir.join("other.cleared").exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn legacy_names_are_removed_and_the_terminal_memory_is_kept() {
+        let dir = std::env::temp_dir().join(format!("dagadbm-legacy-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("icons")).unwrap();
+        fs::write(dir.join("icons/claude.png"), "old").unwrap();
+        let legacy = [
+            "focus-0123456789abcdef.sh",
+            ".focus-0123456789abcdef.42.tmp",
+            "focus-origin-w1.marker",
+            "herdr-w1-p1.cleared",
+            "herdr-w1-p1.cleared.result.Ab12Cd",
+            "herdr-w1-p1.cleared.status.Ab12Cd",
+            "herdr-w1-p1.last-status",
+            "herdr-w1-p1.notification.json",
+            ".herdr-w1-p1.notification.json.42.tmp",
+            "herdr-w1-p1.1-2-3.repost",
+            ".terminal-memory-42.tmp",
+        ];
+        for name in legacy {
+            fs::write(dir.join(name), "old").unwrap();
+        }
+        fs::write(
+            dir.join("terminal-memory.json"),
+            r#"{"workspaces":{"w1":"app.warp"}}"#,
+        )
+        .unwrap();
+        let kept = [
+            prefixed("w1-p1.cleared"),
+            prefixed("w1-p1.last-status"),
+            prefixed("focus-0123456789abcdef.sh"),
+            "herdr-dagadbm-notify.repost.record.w1-p1.json.42.tmp".to_string(),
+            "focus-click.log".to_string(),
+            "focus-notes.sh".to_string(),
+            "herdr-notes.txt".to_string(),
+        ];
+        for name in &kept {
+            fs::write(dir.join(name), "new").unwrap();
+        }
+
+        remove_legacy_state_in(&dir).unwrap();
+
+        for name in legacy {
+            assert!(!dir.join(name).exists(), "{name}");
+        }
+        assert!(!dir.join("icons").exists());
+        assert!(!dir.join("terminal-memory.json").exists());
+        let bindings = read_terminal_bindings_from(&dir.join(terminal_memory_name())).unwrap();
+        assert_eq!(bindings.get("w1").map(String::as_str), Some("app.warp"));
+        for name in &kept {
+            assert!(dir.join(name).exists(), "{name}");
+        }
         fs::remove_dir_all(dir).unwrap();
     }
 
@@ -377,7 +543,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
 
-        let path = dir.join("terminal-memory.json");
+        let path = dir.join(terminal_memory_name());
 
         // Two workspaces bind independently and one rewrite keeps the other.
         remember_terminal_into(&dir, "w1", "com.googlecode.iterm2").unwrap();

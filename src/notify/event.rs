@@ -136,8 +136,6 @@ pub(crate) fn render_notification(
         title: render(&templates.title, values),
         body: render(&templates.message, values),
         subtitle: (!subtitle.trim().is_empty()).then_some(subtitle),
-        action_label: render(&templates.action_label, values),
-        close_label: render(&templates.close_label, values),
         group: notification_group_id(&event.pane_id),
         app_icon: agent_icon_path(&[event.agent.as_deref(), event.agent_id.as_deref()]),
     }
@@ -250,14 +248,15 @@ mod tests {
         assert_eq!(notification.title, "⌂ sample-repo ▸ status");
         assert_eq!(notification.subtitle, None);
         assert_eq!(notification.body, "× Tidy up the parser tests");
-        assert_eq!(notification.action_label, "Focus");
-        assert_eq!(notification.close_label, "Dismiss");
-        assert_eq!(notification.group, "herdr-w1-p3");
+        assert_eq!(notification.group, crate::notify::util::prefixed("w1-p3"));
         assert!(notification
             .app_icon
             .as_deref()
             .unwrap()
-            .ends_with("/icons/codex-color.png"));
+            .ends_with(&format!(
+                "/{}/codex-color.png",
+                crate::notify::util::prefixed("icons")
+            )));
     }
 
     #[test]
@@ -294,8 +293,6 @@ mod tests {
             title: "{state_icon} {state_text}".to_string(),
             subtitle: "{pane}@{hostname}".to_string(),
             message: "{terminal_title} $jj".to_string(),
-            action_label: "Go".to_string(),
-            close_label: "Later".to_string(),
         };
 
         let notification = render_notification(&event, &templates, &values);
@@ -303,8 +300,6 @@ mod tests {
         assert_eq!(notification.title, "× Needs an answer");
         assert_eq!(notification.subtitle.as_deref(), Some("p3@mac"));
         assert_eq!(notification.body, "Implement plugin clean");
-        assert_eq!(notification.action_label, "Go");
-        assert_eq!(notification.close_label, "Later");
     }
 
     #[test]

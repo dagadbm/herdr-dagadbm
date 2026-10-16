@@ -6,7 +6,7 @@ A Herdr plugin that collects small features as they are needed. Each feature liv
 
 ### notify
 
-Clickable macOS notifications for agent panes that are blocked or done. Clicking a notification focuses the pane. The title, subtitle, message, buttons, sound, timeout and statuses are all configurable.
+Clickable macOS notifications for agent panes that are blocked or done. Clicking a notification focuses the pane. The title, subtitle, message, sound, timeout and statuses are all configurable. The notification has one `Focus` button.
 
 This feature is a port of [yankewei/herdr-focus-notify](https://github.com/yankewei/herdr-focus-notify) (MIT), with configurable templates added.
 
@@ -47,8 +47,6 @@ notify_on = ["blocked", "done"]
 title = "⌂ {workspace} ▸ {tab}"
 subtitle = ""   # empty: no subtitle line
 message = "{state_icon} {terminal_title_stripped}"
-action_label = "Focus"
-close_label = "Dismiss"
 sound = ""      # an alerter sound name, e.g. "default"; empty plays no sound
 timeout = 0     # seconds before an unclicked notification is dismissed; 0 keeps it
 

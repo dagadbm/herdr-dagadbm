@@ -1,5 +1,9 @@
 use std::process::Command;
 
+/// The sub-plugin name every runtime name starts with (ADR 14).
+const PREFIX: &str = "herdr-dagadbm-notify";
+const TERMINAL_MEMORY: &str = "herdr-dagadbm-notify-terminal-memory.json";
+
 #[cfg(unix)]
 use std::fs;
 #[cfg(unix)]
@@ -86,7 +90,7 @@ fn focus_event_removes_notification_for_foreground_terminal() {
     assert!(output.status.success());
     assert_eq!(
         fs::read_to_string(&notifier_log).unwrap(),
-        "--remove\nherdr-w1-p2\n"
+        "--remove\nherdr-dagadbm-notify-w1-p2\n"
     );
     fs::remove_dir_all(temp_dir).unwrap();
 }
@@ -120,7 +124,7 @@ fn focus_event_learns_terminal_from_cfbundleidentifier() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(
-        fs::read_to_string(state_dir.join("terminal-memory.json")).unwrap(),
+        fs::read_to_string(state_dir.join(TERMINAL_MEMORY)).unwrap(),
         r#"{"workspaces":{"w1":"com.mitchellh.ghostty"}}"#
     );
     fs::remove_dir_all(temp_dir).unwrap();
@@ -194,7 +198,7 @@ fn visible_focused_pane_removes_its_pending_notification() {
 
     assert!(output.status.success());
     let notifier_output = fs::read_to_string(&notifier_log).unwrap_or_default();
-    assert!(notifier_output.contains("--remove\nherdr-w1-p2\n"));
+    assert!(notifier_output.contains("--remove\nherdr-dagadbm-notify-w1-p2\n"));
     fs::remove_dir_all(temp_dir).unwrap();
 }
 
@@ -485,7 +489,7 @@ fn unfocused_pane_does_not_start_a_visibility_monitor() {
     std::thread::sleep(std::time::Duration::from_secs(3));
 
     let notifier_output = fs::read_to_string(&notifier_log).unwrap_or_default();
-    assert!(!notifier_output.contains("--remove\nherdr-w1-p2\n"));
+    assert!(!notifier_output.contains("--remove\nherdr-dagadbm-notify-w1-p2\n"));
     wait_for_detached_notifier(&temp_dir.join("state"));
     fs::remove_dir_all(temp_dir).unwrap();
 }
@@ -700,7 +704,9 @@ fn focus_click_reports_a_missing_plugin_socket() {
 
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("HERDR_SOCKET_PATH is unavailable"));
-    assert!(!temp_dir.join("state/focus-origin-w2.marker").exists());
+    assert!(!temp_dir
+        .join("state/herdr-dagadbm-notify-focus-origin-w2.marker")
+        .exists());
     fs::remove_dir_all(temp_dir).unwrap();
 }
 
@@ -732,7 +738,9 @@ fn focus_click_reports_socket_api_failures() {
         socket_handle.join().unwrap();
         assert!(!output.status.success());
         assert!(String::from_utf8_lossy(&output.stderr).contains(expected));
-        assert!(!temp_dir.join("state/focus-origin-w2.marker").exists());
+        assert!(!temp_dir
+            .join("state/herdr-dagadbm-notify-focus-origin-w2.marker")
+            .exists());
     }
     fs::remove_dir_all(temp_dir).unwrap();
 }
@@ -779,7 +787,9 @@ fn focus_click_reports_a_socket_that_never_answers() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(!temp_dir.join("state/focus-origin-w2.marker").exists());
+    assert!(!temp_dir
+        .join("state/herdr-dagadbm-notify-focus-origin-w2.marker")
+        .exists());
     assert!(
         elapsed < std::time::Duration::from_secs(8),
         "client waited {elapsed:?}"
@@ -927,7 +937,7 @@ fn notification_focus_does_not_overwrite_existing_terminal_binding() {
     );
 
     assert_eq!(
-        fs::read_to_string(state_dir.join("terminal-memory.json")).unwrap(),
+        fs::read_to_string(state_dir.join(TERMINAL_MEMORY)).unwrap(),
         r#"{"workspaces":{"w1":"com.mitchellh.ghostty"}}"#
     );
     fs::remove_dir_all(temp_dir).unwrap();
@@ -964,7 +974,7 @@ fn obvious_non_terminal_does_not_overwrite_existing_terminal_binding() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(
-        fs::read_to_string(state_dir.join("terminal-memory.json")).unwrap(),
+        fs::read_to_string(state_dir.join(TERMINAL_MEMORY)).unwrap(),
         r#"{"workspaces":{"w1":"com.mitchellh.ghostty"}}"#
     );
     fs::remove_dir_all(temp_dir).unwrap();
@@ -976,7 +986,7 @@ fn clear_terminal_bindings_removes_old_activation_commands() {
     let temp_dir = temp_test_dir();
     let state_dir = temp_dir.join("state");
     write_terminal_binding(&state_dir, "w1", "com.mitchellh.ghostty");
-    let script = state_dir.join("focus-old.sh");
+    let script = state_dir.join("herdr-dagadbm-notify-focus-old.sh");
     fs::write(
         &script,
         "#!/bin/sh\n    open -b 'com.google.Chrome' >/dev/null 2>&1\n    exec focus\n",
@@ -994,7 +1004,7 @@ fn clear_terminal_bindings_removes_old_activation_commands() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(!state_dir.join("terminal-memory.json").exists());
+    assert!(!state_dir.join(TERMINAL_MEMORY).exists());
     assert!(!fs::read_to_string(script).unwrap().contains("open -b"));
     fs::remove_dir_all(temp_dir).unwrap();
 }
@@ -1003,7 +1013,7 @@ fn clear_terminal_bindings_removes_old_activation_commands() {
 fn write_terminal_binding(state_dir: &Path, workspace: &str, bundle_id: &str) {
     fs::create_dir_all(state_dir).unwrap();
     fs::write(
-        state_dir.join("terminal-memory.json"),
+        state_dir.join(TERMINAL_MEMORY),
         format!(r#"{{"workspaces":{{"{workspace}":"{bundle_id}"}}}}"#),
     )
     .unwrap();
@@ -1057,7 +1067,9 @@ fn config_file_selects_statuses_and_templates() {
     );
     assert!(notifier_output.contains("--message=◐ Tidy up ABC-1\n"));
     assert!(!notifier_output.contains("--subtitle"));
-    assert!(notifier_output.contains("--actions\nGo\n"));
+    // The button is always `Focus`; a legacy `action_label` is ignored.
+    assert!(notifier_output.contains("--actions\nFocus\n"));
+    assert!(!notifier_output.contains("--close-label"));
     assert!(notifier_output.contains("--sound\nPing\n"));
     assert!(notifier_output.contains("--timeout\n30\n"));
     assert_eq!(notifier_output.matches("--title=").count(), 1);
@@ -1182,7 +1194,7 @@ fn a_repeated_agent_status_notifies_once_and_leaves_herdr_alone() {
     let notifier_log = temp_dir.join("notifier.log");
     write_executable(
         &temp_dir.join("alerter"),
-        "#!/bin/sh\nfor arg in \"$@\"; do\n  case \"$arg\" in herdr-*) printf '%s\\n' \"$arg\" >> \"$NOTIFIER_LOG\";; esac\ndone\n",
+        "#!/bin/sh\nfor arg in \"$@\"; do\n  case \"$arg\" in herdr-dagadbm-notify-*) printf '%s\\n' \"$arg\" >> \"$NOTIFIER_LOG\";; esac\ndone\n",
     );
 
     let state_dir = temp_dir.join("state");
@@ -1249,9 +1261,747 @@ fn a_repeated_agent_status_notifies_once_and_leaves_herdr_alone() {
     let notified = fs::read_to_string(&notifier_log).unwrap_or_default();
     assert_eq!(
         notified.lines().collect::<Vec<_>>(),
-        ["herdr-w1-p2", "herdr-w1-p3", "herdr-w1-p2"],
+        [
+            "herdr-dagadbm-notify-w1-p2",
+            "herdr-dagadbm-notify-w1-p3",
+            "herdr-dagadbm-notify-w1-p2"
+        ],
         "{notified}"
     );
 
     fs::remove_dir_all(temp_dir).unwrap();
+}
+
+/// A Herdr session with notifications the test answers: every pane is an
+/// unfocused agent in tab `w1:t7` of workspace `repo`, and the tab label lives
+/// in a file, so the tab marker really renames it. The fake `alerter` logs
+/// each notification as one line of `|`-terminated arguments, then waits for
+/// the test to write what alerter would print into `answer-<group>`; `--list`
+/// prints the file `shown`.
+#[cfg(unix)]
+struct Session {
+    dir: PathBuf,
+}
+
+#[cfg(unix)]
+impl Session {
+    fn new(config: &str) -> Self {
+        let dir = temp_test_dir();
+        fs::write(dir.join("tab-label"), "status").unwrap();
+        fs::create_dir_all(dir.join("config")).unwrap();
+        fs::write(dir.join("config/config.toml"), config).unwrap();
+        write_executable(
+            &dir.join("herdr"),
+            r#"#!/bin/sh
+case "$1 $2" in
+  'agent get') printf '{"result":{"agent":{"focused":false,"pane_id":"%s","tab_id":"w1:t7"}}}\n' "$3" ;;
+  'tab get') printf '{"result":{"tab":{"label":"%s","number":7}}}\n' "$(cat "$STUB_DIR/tab-label")" ;;
+  'tab rename') printf '%s' "$4" > "$STUB_DIR/tab-label" ;;
+  'workspace list') echo '{"result":{"workspaces":[{"workspace_id":"w1","label":"repo"}]}}' ;;
+esac
+"#,
+        );
+        write_executable(
+            &dir.join("alerter"),
+            r#"#!/bin/sh
+case "$1" in
+  --list)
+    # A failing list: garbage on stdout and a non-zero exit.
+    if [ -e "$STUB_DIR/list-fails" ]; then echo 'alerter: list failed'; exit 1; fi
+    cat "$STUB_DIR/shown" 2>/dev/null; exit 0 ;;
+  --remove) exit 0 ;;
+esac
+group=
+prev=
+for arg in "$@"; do
+  [ "$prev" = "--group" ] && group=$arg
+  prev=$arg
+done
+line=$(printf '%s|' "$@")
+printf '%s\n' "$line" >> "$NOTIFIER_LOG"
+answer="$STUB_DIR/answer-$group"
+i=0
+while [ ! -e "$answer" ] && [ "$i" -lt 300 ]; do
+  sleep 0.05
+  i=$((i + 1))
+done
+if [ -e "$answer" ]; then
+  reply=$(cat "$answer")
+  rm -f "$answer"
+  # `@EXIT<n>`: alerter fails with status n and prints nothing.
+  case "$reply" in @EXIT*) exit "${reply#@EXIT}" ;; esac
+  printf '%s' "$reply"
+fi
+"#,
+        );
+        // The frontmost app comes from the file `frontmost`, so the real
+        // lsappinfo never runs; `open` only logs.
+        fs::write(dir.join("frontmost"), "com.example.other").unwrap();
+        write_executable(
+            &dir.join("lsappinfo"),
+            "#!/bin/sh\ncase \"$1\" in\n  front) printf '%s\\n' 'ASN:0x0-0x1:' ;;\n  *) printf 'bundleID=\"%s\"\\n' \"$(cat \"$STUB_DIR/frontmost\")\" ;;\nesac\n",
+        );
+        write_executable(
+            &dir.join("open"),
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$STUB_DIR/open.log\"\n",
+        );
+        Self { dir }
+    }
+
+    fn state_dir(&self) -> PathBuf {
+        self.dir.join("state")
+    }
+
+    /// `dagadbm notify` in this session, with every stub on `PATH`.
+    fn command(&self) -> Command {
+        let mut command = binary();
+        command
+            .env("HERDR_BIN_PATH", self.dir.join("herdr"))
+            .env("HERDR_PLUGIN_STATE_DIR", self.state_dir())
+            .env("HERDR_PLUGIN_CONFIG_DIR", self.dir.join("config"))
+            .env("NOTIFIER_LOG", self.dir.join("notifier.log"))
+            .env("STUB_DIR", &self.dir)
+            .env_remove("HERDR_SOCKET_PATH")
+            .env("PATH", path_with_temp_dir(&self.dir));
+        command
+    }
+
+    /// Runs `--notification-<outcome> <pane> <post_id>`, as a generated
+    /// script reports how its notification ended.
+    fn report(&self, outcome: &str, pane: &str, post_id: &str) -> std::process::Output {
+        self.command()
+            .args([&format!("--notification-{outcome}"), pane, post_id])
+            .output()
+            .unwrap()
+    }
+
+    /// Sends a `blocked` event for the pane and waits for its notification.
+    fn notify(&self, pane: &str) {
+        let before = self.posts().len();
+        let output = self
+            .command()
+            .env("HERDR_PLUGIN_EVENT", "pane.agent_status_changed")
+            .env(
+                "HERDR_PLUGIN_EVENT_JSON",
+                format!(
+                    r#"{{"event":"pane.agent_status_changed","data":{{"pane_id":"{pane}","agent_status":"blocked","agent":"Codex","title":"Fix {pane}"}}}}"#
+                ),
+            )
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        self.wait_for_posts(before + 1);
+    }
+
+    /// Makes the notification of `pane` end the way alerter reports `answer`.
+    fn answer(&self, pane: &str, answer: &str) {
+        let group = format!("{PREFIX}-{}", pane.replace(':', "-"));
+        let temp = self.dir.join(format!(".answer-{group}"));
+        fs::write(&temp, answer).unwrap();
+        fs::rename(temp, self.dir.join(format!("answer-{group}"))).unwrap();
+    }
+
+    /// Every notification posted so far, in order.
+    fn posts(&self) -> Vec<String> {
+        fs::read_to_string(self.dir.join("notifier.log"))
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_string)
+            .collect()
+    }
+
+    fn posts_for(&self, pane: &str) -> Vec<String> {
+        let group = format!("--group|{PREFIX}-{}|", pane.replace(':', "-"));
+        self.posts()
+            .into_iter()
+            .filter(|post| post.contains(&group))
+            .collect()
+    }
+
+    fn wait_for_posts(&self, count: usize) {
+        for _ in 0..1000 {
+            if self.posts().len() >= count {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("expected {count} notifications, got {:?}", self.posts());
+    }
+
+    fn record_path(&self, pane: &str) -> PathBuf {
+        self.state_dir().join(format!(
+            "{PREFIX}.repost.record.{}.json",
+            pane.replace(':', "-")
+        ))
+    }
+
+    fn record(&self, pane: &str) -> serde_json::Value {
+        serde_json::from_str(&fs::read_to_string(self.record_path(pane)).unwrap()).unwrap()
+    }
+
+    /// The ledger status of the pane's notification.
+    fn status(&self, pane: &str) -> String {
+        self.record(pane)["status"].as_str().unwrap().to_string()
+    }
+
+    /// The posting the pane's notification is on.
+    fn post_id(&self, pane: &str) -> String {
+        self.record(pane)["post_id"].as_str().unwrap().to_string()
+    }
+
+    fn click_marker(&self) -> PathBuf {
+        self.state_dir().join(format!("{PREFIX}.repost.click"))
+    }
+
+    fn cleared_marker(&self, pane: &str) -> PathBuf {
+        self.state_dir()
+            .join(format!("{PREFIX}-{}.cleared", pane.replace(':', "-")))
+    }
+
+    /// Waits until the pane's record has `status`, and fails after 5 s.
+    fn wait_for_status(&self, pane: &str, status: &str) {
+        for _ in 0..500 {
+            if self.record_path(pane).exists() && self.status(pane) == status {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("{pane} is {}, expected {status}", self.status(pane));
+    }
+
+    /// Waits until the pane's notification script has exited: its temp
+    /// files, named after the `.cleared` marker, are gone.
+    fn wait_for_script_end(&self, pane: &str) {
+        let prefix = format!("{PREFIX}-{}.cleared.", pane.replace(':', "-"));
+        for _ in 0..500 {
+            let running = fs::read_dir(self.state_dir()).is_ok_and(|entries| {
+                entries
+                    .flatten()
+                    .any(|entry| entry.file_name().to_string_lossy().starts_with(&prefix))
+            });
+            if !running {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("the script of {pane} did not finish");
+    }
+
+    /// Forgets the pane's last agent status, so the next `blocked` event
+    /// notifies again (ADR 11).
+    fn forget_last_status(&self, pane: &str) {
+        fs::remove_file(
+            self.state_dir()
+                .join(format!("{PREFIX}-{}.last-status", pane.replace(':', "-"))),
+        )
+        .unwrap();
+    }
+
+    /// Waits for every notification script to finish, then removes the
+    /// session. Each pane's notification must have been answered.
+    fn finish(self) {
+        wait_for_detached_notifier(&self.state_dir());
+        fs::remove_dir_all(&self.dir).unwrap();
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn legacy_button_labels_in_the_config_are_ignored() {
+    let session = Session::new(
+        "[notify]\naction_label = \"Go\"\nclose_label = \"Later\"\n\n[notify.status.blocked]\naction_label = \"Look\"\nclose_label = \"Nope\"\n",
+    );
+
+    session.notify("w1:p2");
+
+    let post = &session.posts()[0];
+    assert!(post.contains("|--actions|Focus|"), "{post}");
+    assert!(!post.contains("--close-label"), "{post}");
+    for label in ["Go", "Later", "Look", "Nope"] {
+        assert!(!post.contains(&format!("|{label}|")), "{post}");
+    }
+    session.answer("w1:p2", "@TIMEOUT");
+    session.finish();
+}
+
+#[cfg(unix)]
+#[test]
+fn the_title_names_the_tab_as_it_was_before_the_marker() {
+    let session = Session::new("");
+
+    session.notify("w1:p2");
+
+    // The marker renamed the tab before the notification was rendered.
+    assert_eq!(
+        fs::read_to_string(session.dir.join("tab-label")).unwrap(),
+        "⚠ status"
+    );
+    let post = &session.posts()[0];
+    assert!(post.starts_with("--title=⌂ repo ▸ status|"), "{post}");
+    // A timeout is the end of it: the notification is done.
+    session.answer("w1:p2", "@TIMEOUT");
+    wait_for_detached_notifier(&session.state_dir());
+    assert_eq!(session.status("w1:p2"), "done");
+    session.finish();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_click_reposts_the_notification_it_closed_silently_and_unchanged() {
+    let session = Session::new(
+        "[notify]\nsubtitle = \"{agent} · {pane}\"\nsound = \"Ping\"\ntimeout = 600\n",
+    );
+    session.notify("w1:p3");
+    session.notify("w1:p4");
+    session.notify("w1:p2");
+    // p4 is still on screen, so the click leaves it alone.
+    fs::write(
+        session.dir.join("shown"),
+        r#"[{"groupID":"herdr-dagadbm-notify-w1-p4","title":"⌂ repo ▸ status"}]"#,
+    )
+    .unwrap();
+
+    // The click on p2 closes p3 too, as alerter 26.5 does.
+    let clicked = std::time::Instant::now();
+    session.answer("w1:p2", "Focus");
+    session.answer("w1:p3", "@CLOSED");
+    session.wait_for_posts(4);
+
+    assert!(
+        clicked.elapsed() >= std::time::Duration::from_secs(1),
+        "reposted after {:?}",
+        clicked.elapsed()
+    );
+    let p3 = session.posts_for("w1:p3");
+    assert_eq!(p3.len(), 2, "{p3:?}");
+    assert!(p3[0].contains("|--sound|Ping|"), "{}", p3[0]);
+    // The same stored text, the same group and timeout, and no sound.
+    assert_eq!(p3[1], p3[0].replace("--sound|Ping|", ""));
+    assert!(p3[1].contains("--subtitle=Codex · p3|"), "{}", p3[1]);
+    // The re-post is silent and restarts the stored timeout in full (the
+    // stub ignores `--timeout`, so only the argument is checked).
+    assert!(!p3[1].contains("--sound"), "{}", p3[1]);
+    assert!(p3[1].contains("|--timeout|600|"), "{}", p3[1]);
+    assert_eq!(session.posts_for("w1:p4").len(), 1);
+    assert_eq!(session.posts_for("w1:p2").len(), 1);
+    assert_eq!(session.status("w1:p2"), "done");
+    assert_eq!(session.status("w1:p3"), "pending");
+
+    // The repost has a loop of its own: closing it now dismisses it.
+    session.answer("w1:p3", "@CLOSED");
+    session.answer("w1:p4", "@TIMEOUT");
+    wait_for_detached_notifier(&session.state_dir());
+    assert_eq!(session.status("w1:p3"), "dismissed");
+    assert_eq!(session.status("w1:p4"), "done");
+    session.finish();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_close_without_a_recent_click_is_dismissed_for_good() {
+    let session = Session::new("");
+    session.notify("w1:p3");
+    session.answer("w1:p3", "@CLOSED");
+    wait_for_detached_notifier(&session.state_dir());
+    assert_eq!(session.status("w1:p3"), "dismissed");
+
+    // A later click on another notification does not bring it back.
+    session.notify("w1:p2");
+    session.answer("w1:p2", "Focus");
+    wait_for_detached_notifier(&session.state_dir());
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    assert_eq!(session.posts_for("w1:p3").len(), 1);
+    assert_eq!(session.status("w1:p3"), "dismissed");
+    assert_eq!(session.status("w1:p2"), "done");
+    session.finish();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_close_within_a_second_of_a_click_is_not_dismissed() {
+    let session = Session::new("");
+    session.notify("w1:p3");
+
+    fs::write(
+        session.state_dir().join(format!("{PREFIX}.repost.click")),
+        "",
+    )
+    .unwrap();
+    session.answer("w1:p3", "@CLOSED");
+    wait_for_detached_notifier(&session.state_dir());
+
+    assert_eq!(session.status("w1:p3"), "pending");
+    session.finish();
+}
+
+#[cfg(unix)]
+#[test]
+fn two_clicks_at_once_repost_a_closed_notification_once() {
+    let session = Session::new("");
+    session.notify("w1:p3");
+    session.notify("w1:p1");
+    session.notify("w1:p2");
+
+    session.answer("w1:p1", "Focus");
+    session.answer("w1:p2", "@CONTENTCLICKED");
+    session.answer("w1:p3", "@CLOSED");
+    session.wait_for_posts(4);
+    // Time for a second, wrong repost to show up.
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+
+    assert_eq!(session.posts().len(), 4, "{:?}", session.posts());
+    assert_eq!(session.posts_for("w1:p3").len(), 2);
+    assert_eq!(session.status("w1:p1"), "done");
+    assert_eq!(session.status("w1:p2"), "done");
+    session.answer("w1:p3", "@TIMEOUT");
+    wait_for_detached_notifier(&session.state_dir());
+    assert_eq!(session.status("w1:p3"), "done");
+    session.finish();
+}
+
+/// Gap: the `pane.focused` path must resolve the record itself, not leave it
+/// to the script's later report.
+#[cfg(unix)]
+#[test]
+fn focusing_the_pane_ends_its_pending_notification_at_once() {
+    let session = Session::new("");
+    session.notify("w1:p3");
+    session.notify("w1:p2");
+
+    // The user switches to the terminal that runs Herdr and focuses p3.
+    write_terminal_binding(&session.state_dir(), "w1", "com.example.terminal");
+    fs::write(session.dir.join("frontmost"), "com.example.terminal").unwrap();
+    let output = session
+        .command()
+        .env("HERDR_PLUGIN_EVENT", "pane.focused")
+        .env(
+            "HERDR_PLUGIN_EVENT_JSON",
+            r#"{"event":"pane.focused","data":{"pane_id":"w1:p3"}}"#,
+        )
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    fs::write(session.dir.join("frontmost"), "com.example.other").unwrap();
+
+    // Done before its script reports anything.
+    assert_eq!(session.status("w1:p3"), "done");
+
+    // The stub's `--remove` does not end the waiting instance, so the end is
+    // reported by hand. A later click on p2 does not bring p3 back.
+    session.answer("w1:p3", "@CLOSED");
+    session.answer("w1:p2", "Focus");
+    wait_for_detached_notifier(&session.state_dir());
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert_eq!(session.posts_for("w1:p3").len(), 1);
+    assert_eq!(session.status("w1:p3"), "done");
+    session.finish();
+}
+
+/// Gap: `closed` reads the `.cleared` marker. Without it this close, with no
+/// click around, would count as the user's.
+#[cfg(unix)]
+#[test]
+fn a_close_after_the_pane_was_focused_is_done_not_dismissed() {
+    let session = Session::new("");
+    session.notify("w1:p3");
+    fs::write(session.cleared_marker("w1:p3"), "").unwrap();
+
+    session.answer("w1:p3", "@CLOSED");
+    wait_for_detached_notifier(&session.state_dir());
+
+    assert_eq!(session.status("w1:p3"), "done");
+    session.finish();
+}
+
+/// Gap: the re-post loop reads the `.cleared` marker. Without the check the
+/// record is claimed and re-posted; the re-post script then exits at its own
+/// `.cleared` check without showing anything, so the record stays pending.
+#[cfg(unix)]
+#[test]
+fn a_click_ends_a_closed_notification_whose_pane_was_focused_meanwhile() {
+    let session = Session::new("");
+    session.notify("w1:p3");
+    session.notify("w1:p2");
+    // p3 was closed by the click and its pane focused before the click
+    // looked; only the marker is written, so the focus path itself is not in
+    // play.
+    fs::write(session.click_marker(), "").unwrap();
+    session.answer("w1:p3", "@CLOSED");
+    // The marker lands after p3's own close report, which would otherwise
+    // see it and end the record itself.
+    session.wait_for_script_end("w1:p3");
+    assert_eq!(session.status("w1:p3"), "pending");
+    fs::write(session.cleared_marker("w1:p3"), "").unwrap();
+
+    session.answer("w1:p2", "Focus");
+    wait_for_detached_notifier(&session.state_dir());
+
+    assert_eq!(session.status("w1:p3"), "done");
+    assert_eq!(session.posts_for("w1:p3").len(), 1);
+    session.finish();
+}
+
+/// Gap: a close that reports before the click marker lands. The settle wait
+/// lets a marker written 80 ms later still count.
+#[cfg(unix)]
+#[test]
+fn a_close_reported_just_before_the_click_marker_lands_stays_pending() {
+    let session = Session::new("");
+    session.notify("w1:p3");
+    let post_id = session.post_id("w1:p3");
+
+    let close = session
+        .command()
+        .args(["--notification-closed", "w1:p3", &post_id])
+        .spawn()
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(80));
+    fs::write(session.click_marker(), "").unwrap();
+    let output = close.wait_with_output().unwrap();
+
+    assert!(output.status.success());
+    assert_eq!(session.status("w1:p3"), "pending");
+    session.answer("w1:p3", "@TIMEOUT");
+    session.finish();
+}
+
+/// Gap: a click marker older than the click window does not make a close
+/// collateral.
+#[cfg(unix)]
+#[test]
+fn a_close_more_than_a_second_after_a_click_is_dismissed() {
+    let session = Session::new("");
+    session.notify("w1:p3");
+    let marker = session.click_marker();
+    fs::write(&marker, "").unwrap();
+    fs::File::options()
+        .write(true)
+        .open(&marker)
+        .unwrap()
+        .set_modified(SystemTime::now() - std::time::Duration::from_secs(2))
+        .unwrap();
+
+    session.answer("w1:p3", "@CLOSED");
+    wait_for_detached_notifier(&session.state_dir());
+
+    assert_eq!(session.status("w1:p3"), "dismissed");
+    session.finish();
+}
+
+/// Gap: a posting another click already claimed is not posted again, without
+/// relying on two clicks racing.
+#[cfg(unix)]
+#[test]
+fn a_claimed_posting_is_not_reposted() {
+    let session = Session::new("");
+    session.notify("w1:p3");
+    session.notify("w1:p2");
+    let post_id = session.post_id("w1:p3");
+    fs::write(
+        session
+            .state_dir()
+            .join(format!("{PREFIX}.repost.claim.w1-p3.{post_id}")),
+        "",
+    )
+    .unwrap();
+
+    session.answer("w1:p2", "Focus");
+    session.answer("w1:p3", "@CLOSED");
+    wait_for_detached_notifier(&session.state_dir());
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    assert_eq!(session.posts_for("w1:p3").len(), 1);
+    assert_eq!(session.post_id("w1:p3"), post_id);
+    assert_eq!(session.status("w1:p3"), "pending");
+    session.finish();
+}
+
+/// Gap: a script that outlived its posting reports with the old `post_id`;
+/// the pane's newer record is untouched, whatever the report.
+#[cfg(unix)]
+#[test]
+fn reports_from_an_old_posting_leave_the_new_record_alone() {
+    let session = Session::new("");
+    session.notify("w1:p3");
+    let old_post_id = session.post_id("w1:p3");
+    session.answer("w1:p3", "@TIMEOUT");
+    wait_for_detached_notifier(&session.state_dir());
+    session.forget_last_status("w1:p3");
+    session.notify("w1:p3");
+    let record = fs::read(session.record_path("w1:p3")).unwrap();
+    assert_ne!(session.post_id("w1:p3"), old_post_id);
+
+    for outcome in ["closed", "ended", "clicked"] {
+        // The click cannot focus without a Herdr socket; only the ledger
+        // matters here.
+        let output = session.report(outcome, "w1:p3", &old_post_id);
+        assert!(
+            !String::from_utf8_lossy(&output.stderr).contains("panicked"),
+            "{outcome}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            fs::read(session.record_path("w1:p3")).unwrap(),
+            record,
+            "{outcome}"
+        );
+    }
+    session.answer("w1:p3", "@TIMEOUT");
+    session.finish();
+}
+
+/// Gap: alerter failing without any output ends the posting.
+#[cfg(unix)]
+#[test]
+fn a_failing_alerter_ends_the_notification() {
+    let session = Session::new("");
+    session.notify("w1:p3");
+
+    session.answer("w1:p3", "@EXIT3");
+    wait_for_detached_notifier(&session.state_dir());
+
+    assert_eq!(session.status("w1:p3"), "done");
+    session.finish();
+}
+
+/// Gap: without alerter's list nothing is known, so nothing is re-posted.
+#[cfg(unix)]
+#[test]
+fn a_failing_list_reposts_nothing() {
+    let session = Session::new("");
+    session.notify("w1:p3");
+    session.notify("w1:p2");
+    fs::write(session.dir.join("list-fails"), "").unwrap();
+
+    session.answer("w1:p2", "Focus");
+    session.answer("w1:p3", "@CLOSED");
+    wait_for_detached_notifier(&session.state_dir());
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    assert_eq!(session.posts_for("w1:p3").len(), 1, "{:?}", session.posts());
+    assert_eq!(session.status("w1:p3"), "pending");
+    session.finish();
+}
+
+/// Gap: a dismissed record ignores every later report of its posting, even a
+/// close right after a click.
+#[cfg(unix)]
+#[test]
+fn a_dismissed_notification_stays_dismissed() {
+    let session = Session::new("");
+    session.notify("w1:p3");
+    let post_id = session.post_id("w1:p3");
+    session.answer("w1:p3", "@CLOSED");
+    wait_for_detached_notifier(&session.state_dir());
+    assert_eq!(session.status("w1:p3"), "dismissed");
+
+    fs::write(session.click_marker(), "").unwrap();
+    for outcome in ["closed", "ended"] {
+        assert!(session.report(outcome, "w1:p3", &post_id).status.success());
+        assert_eq!(session.status("w1:p3"), "dismissed", "{outcome}");
+    }
+    session.finish();
+}
+
+/// Gap: only pending records count as others to re-post. A dismissed one
+/// must not even make the click wait for the click window. The claim check
+/// would stop a wrong re-post, so the wait is what shows the filter.
+#[cfg(unix)]
+#[test]
+fn a_click_with_only_dismissed_others_does_not_wait() {
+    let session = Session::new("");
+    session.notify("w1:p3");
+    session.answer("w1:p3", "@CLOSED");
+    wait_for_detached_notifier(&session.state_dir());
+    assert_eq!(session.status("w1:p3"), "dismissed");
+    session.notify("w1:p2");
+    let post_id = session.post_id("w1:p2");
+
+    let started = std::time::Instant::now();
+    session.report("clicked", "w1:p2", &post_id);
+    let took = started.elapsed();
+
+    assert!(
+        took < std::time::Duration::from_millis(900),
+        "took {took:?}"
+    );
+    assert_eq!(session.status("w1:p2"), "done");
+    session.answer("w1:p2", "@TIMEOUT");
+    session.finish();
+}
+
+/// Gap: a report for a pane that has no record changes nothing and fails
+/// nothing.
+#[cfg(unix)]
+#[test]
+fn a_report_for_a_pane_without_a_record_is_harmless() {
+    let session = Session::new("");
+
+    for outcome in ["closed", "ended", "clicked"] {
+        let output = session.report(outcome, "w1:p9", "1-2-3");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(!stderr.contains("panicked"), "{outcome}: {stderr}");
+        // A click still tries to focus, which fails here without a Herdr
+        // socket; the others succeed.
+        if outcome != "clicked" {
+            assert!(output.status.success(), "{outcome}: {stderr}");
+        }
+    }
+    assert!(!session.record_path("w1:p9").exists());
+    assert!(session.posts().is_empty());
+    session.finish();
+}
+
+/// Gap: a click reported by a script whose posting is stale still focuses
+/// its pane and re-posts the others, but never the clicked pane's own newer
+/// notification. This is what the `pane_id == clicked_pane` skip in the
+/// re-post loop is for: p2's newer record is pending, older than the click
+/// window, and not listed.
+#[cfg(unix)]
+#[test]
+fn a_stale_click_focuses_and_reposts_others_but_not_its_own_pane() {
+    let session = Session::new("");
+    session.notify("w1:p3");
+    session.notify("w1:p2");
+    let p2_record = fs::read(session.record_path("w1:p2")).unwrap();
+    // p3 was closed by a click.
+    fs::write(session.click_marker(), "").unwrap();
+    session.answer("w1:p3", "@CLOSED");
+    session.wait_for_status("w1:p3", "pending");
+
+    write_terminal_binding(&session.state_dir(), "w1", "com.example.terminal");
+    let (socket_path, socket_handle) = focus_socket(
+        "w1:p2",
+        r#"{"id":"dagadbm:focus","result":{"type":"pane_info","pane":{"pane_id":"w1:p2","workspace_id":"w1"}}}"#,
+    );
+    let output = session
+        .command()
+        .args(["--notification-clicked", "w1:p2", "stale-post"])
+        .env("HERDR_SOCKET_PATH", &socket_path)
+        .output()
+        .unwrap();
+    socket_handle.join().unwrap();
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    session.wait_for_posts(3);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert_eq!(session.posts_for("w1:p3").len(), 2);
+    assert_eq!(session.posts_for("w1:p2").len(), 1);
+    assert_eq!(fs::read(session.record_path("w1:p2")).unwrap(), p2_record);
+    session.answer("w1:p2", "@TIMEOUT");
+    session.answer("w1:p3", "@TIMEOUT");
+    session.finish();
 }

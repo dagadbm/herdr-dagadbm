@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::notify::state::plugin_state_dir;
+use crate::notify::util::prefixed;
 
 static ICON_WRITE_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 
@@ -230,7 +231,7 @@ fn write_embedded_icon_into(dir: &Path, icon: &AgentIcon) -> Option<String> {
 }
 
 fn icon_state_dir() -> PathBuf {
-    plugin_state_dir().join("icons")
+    plugin_state_dir().join(prefixed("icons"))
 }
 
 fn normalize_agent_name(name: &str) -> String {
@@ -287,7 +288,7 @@ mod tests {
     fn writes_embedded_icon_for_known_agent() {
         let path = agent_icon_path(&[Some("Codex")]).unwrap();
 
-        assert!(path.ends_with("/icons/codex-color.png"));
+        assert!(path.ends_with(&format!("/{}/codex-color.png", prefixed("icons"))));
         assert_eq!(
             fs::read(path).unwrap(),
             include_bytes!("assets/icons/agents/codex-color.png")
@@ -298,7 +299,7 @@ mod tests {
     fn writes_github_copilot_icon_for_copilot_cli() {
         let path = agent_icon_path(&[Some("copilot")]).unwrap();
 
-        assert!(path.ends_with("/icons/githubcopilot.png"));
+        assert!(path.ends_with(&format!("/{}/githubcopilot.png", prefixed("icons"))));
         assert_eq!(
             fs::read(path).unwrap(),
             include_bytes!("assets/icons/agents/githubcopilot.png")
@@ -309,14 +310,14 @@ mod tests {
     fn falls_back_to_next_name_that_matches() {
         let path = agent_icon_path(&[Some("Unknown Agent"), Some("Codex")]).unwrap();
 
-        assert!(path.ends_with("/icons/codex-color.png"));
+        assert!(path.ends_with(&format!("/{}/codex-color.png", prefixed("icons"))));
     }
 
     #[test]
     fn prefers_first_matching_name() {
         let path = agent_icon_path(&[Some("Claude"), Some("Codex")]).unwrap();
 
-        assert!(path.ends_with("/icons/claude-color.png"));
+        assert!(path.ends_with(&format!("/{}/claude-color.png", prefixed("icons"))));
     }
 
     #[test]

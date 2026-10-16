@@ -9,6 +9,10 @@ A Herdr plugin (`herdr-plugin.toml`, id `dagadbm`) written in Rust. It is macOS 
 - `config.example.toml` has one section per feature and lists every key with its default. It must match the defaults in `src/notify/config.rs`; a test enforces this.
 - `docs/adr/` holds one ADR per decision. Add a new ADR, or update the existing one, when a decision changes.
 
+## Naming
+
+The repo is one big plugin, `herdr-dagadbm`, made of small sub-plugins, one per feature: `herdr-dagadbm-<feature>`, such as `herdr-dagadbm-notify`. Every file, folder, alerter group and temporary directory a feature creates at runtime starts with its sub-plugin name, so a file in the state directory shows which feature owns it (ADR 14). The binary and `src/<feature>/` keep the short feature name.
+
 ## Adding a feature
 
 1. Create `src/<feature>/` with a `run(args)` entry point.

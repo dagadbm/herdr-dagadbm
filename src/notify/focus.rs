@@ -138,17 +138,21 @@ pub(crate) fn pane_details(
 
 /// The workspace, the tab, the terminal title, and the git state a notification
 /// names about its pane, for a notification that is going to be shown.
+/// `known_tab` is a tab label the caller already read, which saves the lookup.
 pub(crate) fn pane_labels(
     pane_id: &str,
     details: PaneDetails,
+    known_tab: Option<String>,
     herdr_bin: &str,
     deadline: Instant,
 ) -> PaneLabels {
     let workspace = workspace_label(pane_id, herdr_bin, deadline);
-    let tab = details
-        .tab_id
-        .as_deref()
-        .and_then(|tab_id| tab_label(tab_id, herdr_bin, deadline));
+    let tab = known_tab.or_else(|| {
+        details
+            .tab_id
+            .as_deref()
+            .and_then(|tab_id| tab_label(tab_id, herdr_bin, deadline))
+    });
     // Without a branch there is nothing to attribute the changes to, so the
     // git probe is not worth its time: a detached `HEAD` or a directory outside
     // a repository contributes nothing rather than a bare `+120/-45` that

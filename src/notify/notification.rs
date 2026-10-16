@@ -1,6 +1,10 @@
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+/// One notification as rendered, ready for alerter. The ledger stores it as
+/// is, so a re-post shows the same text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct FocusNotification {
     pub(crate) pane_id: String,
     pub(crate) status: String,
@@ -9,9 +13,6 @@ pub(crate) struct FocusNotification {
     /// Secondary line shown under the title (alerter `--subtitle`). An empty
     /// rendered subtitle is left out rather than shown as a blank line.
     pub(crate) subtitle: Option<String>,
-    /// The button that focuses the pane, and the text its click reports back.
-    pub(crate) action_label: String,
-    pub(crate) close_label: String,
     pub(crate) group: String,
     pub(crate) app_icon: Option<String>,
 }

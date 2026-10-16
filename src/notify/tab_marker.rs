@@ -21,28 +21,40 @@ const SOURCE: &str = "dagadbm";
 /// status event is about; `details` is the `agent get` the caller already
 /// made. Best-effort: a Herdr that does not answer in time leaves them as they
 /// were.
+///
+/// Returns the tab's label as the user named it, read before the marker
+/// changes it and without a marker it already had, so a notification names
+/// the tab rather than the marker. None when the tab marker is off or the tab
+/// was not read.
 pub(crate) fn sync_for_status(
     config: &NotifyConfig,
     event: &StatusEvent,
     details: &PaneDetails,
     herdr_bin: &str,
     deadline: Instant,
-) {
+) -> Option<String> {
     // A focused pane is already being looked at, so it needs no marker.
     let looked_at = details.focused;
 
     let tab = &config.tab_marker;
+    let mut original_label = None;
     if let (true, Some(tab_id)) = (tab.enabled, details.tab_id()) {
-        if tab.marks(&event.status) && !looked_at {
-            set(tab_id, &tab.icon, herdr_bin, deadline);
-        } else {
-            clear(tab_id, &tab.icon, herdr_bin, deadline);
+        if let Some(label) = tab_label(tab_id, herdr_bin, deadline) {
+            let unmarked = unmarked_label(&label, &tab.icon).map(str::to_string);
+            if tab.marks(&event.status) && !looked_at {
+                if let Some(marked) = marked_label(&label, &tab.icon) {
+                    rename(tab_id, &marked, herdr_bin, deadline);
+                }
+            } else if let Some(original) = &unmarked {
+                rename(tab_id, original, herdr_bin, deadline);
+            }
+            original_label = Some(unmarked.unwrap_or(label));
         }
     }
 
     let agent_marker = &config.agent_marker;
     if !agent_marker.enabled {
-        return;
+        return original_label;
     }
     let agent = event.agent.as_deref().unwrap_or_default();
     if agent_marker.marks(&event.status) && !looked_at {
@@ -63,6 +75,7 @@ pub(crate) fn sync_for_status(
             deadline,
         );
     }
+    original_label
 }
 
 /// Unmarks the tab label and the agent name of a pane the user just focused.
@@ -85,15 +98,6 @@ fn report_display_agent(pane_id: &str, option: &[&str], herdr_bin: &str, deadlin
     let mut args = vec!["pane", "report-metadata", pane_id, "--source", SOURCE];
     args.extend_from_slice(option);
     let _ = command_stdout_until(herdr_bin, &args, &[], deadline);
-}
-
-fn set(tab_id: &str, icon: &str, herdr_bin: &str, deadline: Instant) {
-    let Some(label) = tab_label(tab_id, herdr_bin, deadline) else {
-        return;
-    };
-    if let Some(marked) = marked_label(&label, icon) {
-        rename(tab_id, &marked, herdr_bin, deadline);
-    }
 }
 
 fn clear(tab_id: &str, icon: &str, herdr_bin: &str, deadline: Instant) {
@@ -261,13 +265,15 @@ esac
         let herdr = StubHerdr::new("blocked", "mobile zsh");
         let config = NotifyConfig::default();
 
-        sync_for_status(
+        let original = sync_for_status(
             &config,
             &event("blocked", "claude"),
             &unfocused_in_tab(),
             &herdr.bin(),
             deadline(),
         );
+
+        assert_eq!(original.as_deref(), Some("mobile zsh"));
 
         assert_eq!(
             herdr.take_calls(),
@@ -451,7 +457,7 @@ esac
     fn an_already_marked_tab_and_agent_are_not_marked_again() {
         let herdr = StubHerdr::new("already", "⚠ mobile");
 
-        sync_for_status(
+        let original = sync_for_status(
             &NotifyConfig::default(),
             &event("blocked", "⚠ claude"),
             &unfocused_in_tab(),
@@ -459,6 +465,8 @@ esac
             deadline(),
         );
 
+        // The notification still names the tab without the marker.
+        assert_eq!(original.as_deref(), Some("mobile"));
         assert_eq!(herdr.take_calls(), ["tab|get|w1:t1"]);
         assert_eq!(herdr.label(), "⚠ mobile");
     }

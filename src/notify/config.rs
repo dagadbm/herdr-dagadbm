@@ -2,7 +2,9 @@
 //! `$HERDR_PLUGIN_CONFIG_DIR`. Every key is optional and falls back to the
 //! defaults below, so a missing file, a missing section, or a file that does
 //! not parse all behave like the defaults. The file is read on every
-//! invocation, so edits apply to the next event without a reload.
+//! invocation, so edits apply to the next event without a reload. Keys the
+//! plugin does not know are ignored, so a file written for an older version,
+//! such as one with the removed `action_label` and `close_label`, still loads.
 
 use std::collections::BTreeMap;
 use std::env;
@@ -18,8 +20,6 @@ pub(crate) const DEFAULT_SUBTITLE: &str = "";
 pub(crate) const DEFAULT_MESSAGE: &str = "{state_icon} {terminal_title_stripped}";
 pub(crate) const DEFAULT_MARKER_ICON: &str = "⚠";
 pub(crate) const DEFAULT_MARKER_STATUSES: &[&str] = &["blocked", "done"];
-pub(crate) const DEFAULT_ACTION_LABEL: &str = "Focus";
-pub(crate) const DEFAULT_CLOSE_LABEL: &str = "Dismiss";
 
 /// The commented config `notify-init-config` writes. It spells out every
 /// default, so the file documents itself.
@@ -98,8 +98,6 @@ struct TemplateOverrides {
     title: Option<String>,
     subtitle: Option<String>,
     message: Option<String>,
-    action_label: Option<String>,
-    close_label: Option<String>,
 }
 
 /// The templates one notification is rendered from.
@@ -108,8 +106,6 @@ pub(crate) struct Templates {
     pub(crate) title: String,
     pub(crate) subtitle: String,
     pub(crate) message: String,
-    pub(crate) action_label: String,
-    pub(crate) close_label: String,
 }
 
 #[derive(Debug)]
@@ -184,8 +180,6 @@ impl NotifyConfig {
             title: pick(|t| &t.title, DEFAULT_TITLE),
             subtitle: pick(|t| &t.subtitle, DEFAULT_SUBTITLE),
             message: pick(|t| &t.message, DEFAULT_MESSAGE),
-            action_label: pick(|t| &t.action_label, DEFAULT_ACTION_LABEL),
-            close_label: pick(|t| &t.close_label, DEFAULT_CLOSE_LABEL),
         }
     }
 }
@@ -254,8 +248,6 @@ mod tests {
                 title: DEFAULT_TITLE.to_string(),
                 subtitle: DEFAULT_SUBTITLE.to_string(),
                 message: DEFAULT_MESSAGE.to_string(),
-                action_label: DEFAULT_ACTION_LABEL.to_string(),
-                close_label: DEFAULT_CLOSE_LABEL.to_string(),
             }
         );
     }
@@ -368,6 +360,24 @@ mod tests {
     #[test]
     fn an_empty_sound_plays_nothing() {
         assert_eq!(parse("[notify]\nsound = \"\"").unwrap().sound, None);
+    }
+
+    #[test]
+    fn the_removed_button_labels_are_ignored() {
+        let config = parse(
+            "[notify]\naction_label = \"Go\"\nclose_label = \"Later\"\ntitle = \"{tab}\"\n\n[notify.status.done]\naction_label = \"Look\"\nclose_label = \"Nope\"\n",
+        )
+        .unwrap();
+
+        assert_eq!(config.templates_for("done").title, "{tab}");
+        assert_eq!(
+            config.templates_for("blocked"),
+            Templates {
+                title: "{tab}".to_string(),
+                subtitle: DEFAULT_SUBTITLE.to_string(),
+                message: DEFAULT_MESSAGE.to_string(),
+            }
+        );
     }
 
     #[test]
