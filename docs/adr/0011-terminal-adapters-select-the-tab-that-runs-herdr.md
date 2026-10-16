@@ -1,4 +1,4 @@
-# 12. Terminal adapters select the tab that runs Herdr
+# 11. Terminal adapters select the tab that runs Herdr
 
 Date: 2026-10-15
 

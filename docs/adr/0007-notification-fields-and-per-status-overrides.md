@@ -30,5 +30,5 @@ The notification icon is not configurable. It comes from the bundled agent icons
 ## Consequences
 
 - By default the title is the workspace and tab, the subtitle is empty, and the message is the status icon and the terminal title. macOS shows the title in bold, so it stays short.
-- The buttons are not configurable. The notification has one `Focus` button and no `--close-label`, so macOS shows its own close button. The `action_label` and `close_label` keys were removed (ADR 13).
+- The buttons are not configurable. The notification has one `Focus` button and no `--close-label`, so macOS shows its own close button. The `action_label` and `close_label` keys were removed (ADR 12).
 - A config file that still has `action_label` or `close_label`, in `[notify]` or in a status table, still loads. The plugin ignores keys it does not know.

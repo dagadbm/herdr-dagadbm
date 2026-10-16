@@ -1,6 +1,6 @@
 # Glossary
 
-One entry per term used in the code and the docs. Each entry gives the definition, the code identifiers, the file that defines them, and Herdr's own name for the same thing. Template tokens use only Herdr's names (ADR 5). Runtime names start with the sub-plugin name (ADR 14). How the pieces fit together is in [architecture.md](architecture.md).
+One entry per term used in the code and the docs. Each entry gives the definition, the code identifiers, the file that defines them, and Herdr's own name for the same thing. Template tokens use only Herdr's names (ADR 5). Runtime names start with the sub-plugin name (ADR 13). How the pieces fit together is in [architecture.md](architecture.md).
 
 Entries are grouped by area. The last section lists synonyms and inconsistent names found in the code.
 
@@ -19,13 +19,13 @@ One self-contained part of the plugin, run as `dagadbm <feature>`. Its code live
 - Herdr: none. Herdr sees one plugin (ADR 1).
 
 ### Sub-plugin name
-`herdr-dagadbm-<feature>`, the prefix of every runtime name a feature creates. For `notify` it is `herdr-dagadbm-notify`. The binary, the module and the config section keep the short feature name (ADR 14).
+`herdr-dagadbm-<feature>`, the prefix of every runtime name a feature creates. For `notify` it is `herdr-dagadbm-notify`. The binary, the module and the config section keep the short feature name (ADR 13).
 - Code: `PREFIX`, `prefixed`
 - File: `src/notify/util.rs`
 - Herdr: none.
 
 ### Shared code
-Code that two features need. It goes in `src/shared/`, which does not exist yet, and takes the sub-plugin prefix as an argument (ADR 1, ADR 14).
+Code that two features need. It goes in `src/shared/`, which does not exist yet, and takes the sub-plugin prefix as an argument (ADR 1, ADR 13).
 - Code: none yet.
 - File: none yet.
 - Herdr: none.
@@ -185,7 +185,7 @@ An alerter sound name (empty plays nothing) and the seconds before an unclicked 
 - Herdr: none; alerter's `--sound` and `--timeout`.
 
 ### Marker
-An icon and a space put in front of a label to show that an agent needs the user. The tab marker changes the tab label; the agent marker changes the display agent. Each has `enabled`, `icon` and `statuses` (ADR 10). An empty icon turns it off.
+An icon and a space put in front of a label to show that an agent needs the user. The tab marker changes the tab label; the agent marker changes the display agent. Each has `enabled`, `icon` and `statuses` (ADR 9). An empty icon turns it off.
 - Code: `MarkerConfig`, `MarkerSection`, `marks`, `tab_marker`, `agent_marker`, `DEFAULT_MARKER_ICON`, `sync_for_status`, `clear_for_focus`, `marked_label`, `unmarked_label`
 - File: `src/notify/config.rs`, `src/notify/tab_marker.rs`
 - Herdr: tab `label` (`herdr tab rename`) and `display_agent`.
@@ -216,7 +216,7 @@ A `{name}` placeholder from the fixed list, or a `$name` metadata placeholder. `
 One rendered notification, ready for alerter, and the text the ledger stores for a re-post.
 - Code: `FocusNotification`, `render_notification`
 - File: `src/notify/notification.rs`, `src/notify/event.rs`
-- Herdr: none. Herdr's own toasts are a separate feature, kept off (ADR 9).
+- Herdr: none. Herdr's own toasts are a separate feature, kept off (ADR 8).
 
 ### Pane details
 What one `herdr agent get` says about a pane: focused or not, its directory, tab, titles and metadata.
@@ -305,13 +305,13 @@ A file saying the user saw the pane, so its notification is over. The generated 
 - Herdr: none.
 
 ### Terminal adapter
-Code for one terminal app that maps a Herdr client to a command focusing its container (ADR 12).
+Code for one terminal app that maps a Herdr client to a command focusing its container (ADR 11).
 - Code: `TerminalAdapter`, `ADAPTERS`, `adapter_for`, `FocusCommand`, `raise_client_container`, `run_focus_command`
 - File: `src/notify/terminal/mod.rs`
 - Herdr: none.
 
 ### Container
-The terminal tab, window or session that runs one Herdr client (ADR 12).
+The terminal tab, window or session that runs one Herdr client (ADR 11).
 - Code: `focus_command`
 - File: `src/notify/terminal/mod.rs`
 - Herdr: none.
@@ -325,7 +325,7 @@ Bring the bound terminal app to the front with `open -b`.
 ## Ledger and outcomes
 
 ### Ledger
-One record per pane of the latest notification sent, so a notification alerter closed by mistake can be posted again (ADR 13).
+One record per pane of the latest notification sent, so a notification alerter closed by mistake can be posted again (ADR 12).
 - Code: `Record`, `save`, `resolve`, `pending_records`, `is_ledger_file`, `namespace`
 - File: `src/notify/ledger.rs`
 - Herdr: none.
@@ -367,7 +367,7 @@ A file the generated script touches on every click. A close within `CLICK_WINDOW
 - Herdr: none.
 
 ### Collateral close
-A close that alerter 26.5 causes when the user clicks another notification. It prints `@CLOSED`, like a real close (ADR 13).
+A close that alerter 26.5 causes when the user clicks another notification. It prints `@CLOSED`, like a real close (ADR 12).
 - Code: `closed`
 - File: `src/notify/outcome.rs`
 - Herdr: none.
@@ -375,7 +375,7 @@ A close that alerter 26.5 causes when the user clicks another notification. It p
 ## Runtime helpers
 
 ### Last status
-The last agent status seen for a pane, used to skip repeated events (ADR 11).
+The last agent status seen for a pane, used to skip repeated events (ADR 10).
 - Code: `record_status`, `record_status_at`, `last_status_path`
 - File: `src/notify/state.rs`
 - Herdr: none.
@@ -387,7 +387,7 @@ How long each state file is kept, and the pass that removes stale ones.
 - Herdr: none.
 
 ### Legacy state
-State files with names from before ADR 14. Cleanup deletes them and renames the old terminal memory.
+State files with names from before ADR 13. Cleanup deletes them and renames the old terminal memory.
 - Code: `is_legacy_state_file`, `remove_legacy_state_in`
 - File: `src/notify/state.rs`
 - Herdr: none.

@@ -3,7 +3,7 @@
 //! shown and whether it still waits for the user.
 //!
 //! alerter 26.5 closes another notification when one is clicked, and the
-//! closed one reports `@CLOSED`, as if the user had dismissed it (ADR 13). The
+//! closed one reports `@CLOSED`, as if the user had dismissed it (ADR 12). The
 //! record lets the click put it back with the same text.
 
 use std::fs;

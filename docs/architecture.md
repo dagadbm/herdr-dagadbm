@@ -6,13 +6,13 @@ This document explains how herdr-dagadbm is built and why. Read it before you ch
 
 herdr-dagadbm is one Herdr plugin with the id `dagadbm` (`herdr-plugin.toml`). It is built as one Rust binary, also named `dagadbm` (`Cargo.toml`). The binary hosts small features and runs one of them per call: `dagadbm <feature> [args]` (`run` in `src/main.rs`, ADR 1).
 
-There is one feature today, `notify` (`src/notify/`). It sends a clickable macOS notification through `alerter` when an agent pane needs the user, and focuses that pane when the notification is clicked (ADR 2, ADR 3). It also puts a marker icon in front of the tab label and the agent name (ADR 10), and it posts again a notification that alerter closed by mistake (ADR 13). It is a port of yankewei/herdr-focus-notify with configurable text (ADR 2).
+There is one feature today, `notify` (`src/notify/`). It sends a clickable macOS notification through `alerter` when an agent pane needs the user, and focuses that pane when the notification is clicked (ADR 2, ADR 3). It also puts a marker icon in front of the tab label and the agent name (ADR 9), and it posts again a notification that alerter closed by mistake (ADR 12). It is a port of yankewei/herdr-focus-notify with configurable text (ADR 2).
 
 The plugin runs only on macOS (`platforms` in `herdr-plugin.toml`, ADR 3).
 
 ## Process model
 
-- **One short-lived process per hook.** Herdr runs `target/release/dagadbm` once per hook in `herdr-plugin.toml`, and the process exits when the hook is handled. There is no daemon. Herdr starts a new plugin process for each event, so anything that must survive between events lives in files in the state directory (ADR 11, see [Runtime state](#runtime-state)).
+- **One short-lived process per hook.** Herdr runs `target/release/dagadbm` once per hook in `herdr-plugin.toml`, and the process exits when the hook is handled. There is no daemon. Herdr starts a new plugin process for each event, so anything that must survive between events lives in files in the state directory (ADR 10, see [Runtime state](#runtime-state)).
 - **Dispatch.** `run` in `src/main.rs` reads the first argument. `notify` passes the rest to `run` in `src/notify/mod.rs`. `-h`/`--help` and `-V`/`--version` print to stdout. Anything else is an error. `main` prints an error as `dagadbm: <message>` on stderr and exits with a failure code. Herdr keeps stderr in the plugin log (ADR 4).
 - **Feature arguments.** `parse_cli_args` in `src/notify/cli.rs` turns the arguments into one `CliAction`. No arguments means `CliAction::Event`. Two commands in one call are rejected.
 - **Detached notification script.** A notification is shown by a shell script that `write_focus_script` in `src/notify/script.rs` writes into the state directory. `send_notification` in `src/notify/notifier.rs` starts it with `nohup sh ... &`, so it outlives the hook process. The script runs alerter, waits until alerter reports how the notification ended, then calls the binary again with `--notification-clicked`, `--notification-closed` or `--notification-ended`. The only exception is `--test`, which runs the script in the foreground (`run_script_foreground`).
@@ -31,7 +31,7 @@ The plugin runs only on macOS (`platforms` in `herdr-plugin.toml`, ADR 3).
 | `--notification-clicked <pane> <post_id>` | `NotificationEnded` with `Outcome::Clicked` | a generated script | `clicked` in `src/notify/outcome.rs` |
 | `--notification-closed <pane> <post_id>` | `NotificationEnded` with `Outcome::Closed` | a generated script | `closed` in `src/notify/outcome.rs` |
 | `--notification-ended <pane> <post_id>` | `NotificationEnded` with `Outcome::Ended` | a generated script | `ended` in `src/notify/outcome.rs` |
-| `--focus-pane <pane>` | `FocusPane` | scripts generated before ADR 13, and tests | `focus_pane` in `src/notify/focus.rs` |
+| `--focus-pane <pane>` | `FocusPane` | scripts generated before ADR 12, and tests | `focus_pane` in `src/notify/focus.rs` |
 
 `print_usage` in `src/notify/cli.rs` lists the no-argument form, `--test`, `--init-config`, `--cleanup`, `--clear-terminal-bindings` and `--help`. The other flags are internal: only generated scripts and tests call them.
 
@@ -51,14 +51,14 @@ All code of `notify` lives in `src/notify/`. The source files that changed most 
 | `src/notify/focus.rs` | Herdr lookups about a pane, the skip and clear decisions, terminal learning, and the click-to-focus path. Despite its name it is also the Herdr query module. | `pane_details`, `pane_labels`, `tab_label`, `focused_pane_id`, `live_workspace_ids`, `notification_decision`, `should_clear_notification_on_focus`, `learn_terminal_from_frontmost`, `frontmost_bundle_id`, `focus_pane`, `focus_pane_via_socket`, `activate_terminal` |
 | `src/notify/git.rs` | Whether the pane's directory has changes, for `{git_status}`. | `is_dirty` |
 | `src/notify/state.rs` | The state directory and most files in it: terminal memory, focus-origin markers, cleared markers, last status, cleanup and the legacy-name migration. | `plugin_state_dir`, `remember_terminal`, `remembered_terminal`, `record_status`, `cleared_notification_marker_path`, `cleanup_stale_state_files`, `retention_for`, `remove_legacy_state_in` |
-| `src/notify/ledger.rs` | The record of sent notifications, for re-posting (ADR 13). | `Record`, `Status`, `save`, `resolve`, `pending_records`, `claim_repost`, `click_marker_path`, `click_is_recent`, `CLICK_WINDOW` |
+| `src/notify/ledger.rs` | The record of sent notifications, for re-posting (ADR 12). | `Record`, `Status`, `save`, `resolve`, `pending_records`, `claim_repost`, `click_marker_path`, `click_is_recent`, `CLICK_WINDOW` |
 | `src/notify/outcome.rs` | What happens when a notification ends: click, close, or anything else. The re-post loop. | `clicked`, `closed`, `ended`, `repost_closed_by_click`, `CLOSE_SETTLE` |
 | `src/notify/script.rs` | Writes the generated shell script that shows one posting. | `write_focus_script`, `alerter_focus_script`, `AlerterOptions`, `alerter_text_arg`, `test_timeout_secs`, `is_generated_script`, `rewrite_generated_scripts_without_activation` |
 | `src/notify/notifier.rs` | Finds alerter and talks to it directly. | `resolve_notifier_bin`, `send_notification`, `remove_notification`, `shown_groups` |
 | `src/notify/executable.rs` | Finds the `herdr` binary and executables in general. | `resolve_herdr_bin`, `find_executable` |
 | `src/notify/icons.rs` | Maps an agent name to a bundled icon and writes it to disk for alerter. | `agent_icon_path`, `AGENT_ICONS`, `icon_for_agent` |
-| `src/notify/tab_marker.rs` | Marks and unmarks the tab label and the pane's display agent (ADR 10). | `sync_for_status`, `clear_for_focus`, `SOURCE` |
-| `src/notify/terminal/mod.rs` | Brings the terminal tab that runs Herdr forward before activation (ADR 12). | `TerminalAdapter`, `FocusCommand`, `ADAPTERS`, `raise_client_container` |
+| `src/notify/tab_marker.rs` | Marks and unmarks the tab label and the pane's display agent (ADR 9). | `sync_for_status`, `clear_for_focus`, `SOURCE` |
+| `src/notify/terminal/mod.rs` | Brings the terminal tab that runs Herdr forward before activation (ADR 11). | `TerminalAdapter`, `FocusCommand`, `ADAPTERS`, `raise_client_container` |
 | `src/notify/terminal/client.rs` | Finds the Herdr clients of the session and reads their environment and directory. | `HerdrClient`, `herdr_clients`, `last_input`, `process_environment` |
 | `src/notify/terminal/iterm2.rs`, `kitty.rs`, `wezterm.rs`, `ghostty.rs` | One adapter per terminal. | `Iterm2`, `Kitty`, `Wezterm`, `Ghostty` |
 | `src/notify/util.rs` | Names, ids, quoting and command runners shared inside `notify`. | `PREFIX`, `prefixed`, `notification_group_id`, `is_notification_group_id`, `sanitize_group_id`, `workspace_of`, `command_stdout`, `command_stdout_until`, `shell_quote`, `hostname` |
@@ -189,7 +189,7 @@ sequenceDiagram
 
 ### `[[events]] pane.agent_status_changed`: `dagadbm notify`
 
-This is the main path, `run` in `src/notify/mod.rs`. The order matters, see [Invariants](#invariants). The marker calls run for every status change, before the `notify_on` check, because markers have their own `statuses` list (ADR 10). A status that does not notify still costs the `agent get` and the marker calls. The process exits with code 0 on every early exit.
+This is the main path, `run` in `src/notify/mod.rs`. The order matters, see [Invariants](#invariants). The marker calls run for every status change, before the `notify_on` check, because markers have their own `statuses` list (ADR 9). A status that does not notify still costs the `agent get` and the marker calls. The process exits with code 0 on every early exit.
 
 ```mermaid
 sequenceDiagram
@@ -340,7 +340,7 @@ sequenceDiagram
 
 ## Runtime state
 
-All files live in the state directory: `$HERDR_PLUGIN_STATE_DIR`, or `<temp dir>/herdr-dagadbm-notify` when Herdr does not set it (`plugin_state_dir` in `src/notify/state.rs`, ADR 14). `<pane>` is the pane id passed through `sanitize_group_id` in `src/notify/util.rs`, so `w1:p3` becomes `w1-p3`. Every name is built from `PREFIX` in `src/notify/util.rs`. Most names use a dash after the prefix. The ledger files use dots instead, because they form a namespace: prefix, then `repost`, then the kind (ADR 14, `namespace` in `src/notify/ledger.rs`). Retention is applied by `retention_for` in `src/notify/state.rs`: 24 h is `TEMP_FILE_RETENTION`, 30 days is `GENERATED_SCRIPT_RETENTION`, 15 s is `FOCUS_ORIGIN_RETENTION`.
+All files live in the state directory: `$HERDR_PLUGIN_STATE_DIR`, or `<temp dir>/herdr-dagadbm-notify` when Herdr does not set it (`plugin_state_dir` in `src/notify/state.rs`, ADR 13). `<pane>` is the pane id passed through `sanitize_group_id` in `src/notify/util.rs`, so `w1:p3` becomes `w1-p3`. Every name is built from `PREFIX` in `src/notify/util.rs`. Most names use a dash after the prefix. The ledger files use dots instead, because they form a namespace: prefix, then `repost`, then the kind (ADR 13, `namespace` in `src/notify/ledger.rs`). Retention is applied by `retention_for` in `src/notify/state.rs`: 24 h is `TEMP_FILE_RETENTION`, 30 days is `GENERATED_SCRIPT_RETENTION`, 15 s is `FOCUS_ORIGIN_RETENTION`.
 
 | Name | Holds | Written by | Read by | Removed |
 | --- | --- | --- | --- | --- |
@@ -348,10 +348,10 @@ All files live in the state directory: `$HERDR_PLUGIN_STATE_DIR`, or `<temp dir>
 | `herdr-dagadbm-notify-focus-origin-<workspace>.marker` | That a click is focusing a pane in this workspace. | `mark_focus_origin`, from `focus_pane` | `focus_origin_is_active` | After 15 s (`FOCUS_ORIGIN_RETENTION`), on a failed focus (`clear_focus_origin`), or by `clear_terminal_bindings`. |
 | `herdr-dagadbm-notify-<pane>.cleared` | That the user saw the pane, so its notification is over. | `mark_notification_cleared`, from `handle_pane_focused` | The generated script, `closed` and `repost_closed_by_click` (`src/notify/outcome.rs`) | `reset_notification_clearance` before each send. After 24 h. |
 | `herdr-dagadbm-notify-<pane>.cleared.result.XXXXXX`, `.cleared.status.XXXXXX` | alerter's output and exit status, while the script runs. | `mktemp` in the generated script | The generated script | The script's `trap`. After 24 h. |
-| `herdr-dagadbm-notify-<pane>.last-status` | The pane's last agent status (ADR 11). | `record_status` | `record_status` | After 24 h. |
+| `herdr-dagadbm-notify-<pane>.last-status` | The pane's last agent status (ADR 10). | `record_status` | `record_status` | After 24 h. |
 | `herdr-dagadbm-notify-focus-<hash>.sh` | The generated script of one pane. `<hash>` is the pane id hashed with `DefaultHasher`. | `write_focus_script` (through a `.<pid>.tmp` file and a rename) | `sh` | After 30 days (`GENERATED_SCRIPT_RETENTION`). |
 | `herdr-dagadbm-notify-icons/` | Agent PNGs written from the binary. | `write_embedded_icon_into` in `src/notify/icons.rs` | alerter `--app-icon` | Never. |
-| `herdr-dagadbm-notify.repost.record.<pane>.json` | The ledger `Record` of the pane's latest notification (ADR 13). | `save`, `resolve`, `claim_repost` in `src/notify/ledger.rs` | `pending_records` | After 24 h. |
+| `herdr-dagadbm-notify.repost.record.<pane>.json` | The ledger `Record` of the pane's latest notification (ADR 12). | `save`, `resolve`, `claim_repost` in `src/notify/ledger.rs` | `pending_records` | After 24 h. |
 | `herdr-dagadbm-notify.repost.claim.<pane>.<post_id>` | That one click took the right to re-post this posting. `<post_id>` is the posting being replaced, not the new one. | `claim_repost_in` | `claim_repost_in` (`create_new` fails if it exists) | After 24 h. |
 | `herdr-dagadbm-notify.repost.click` | The time of the last click, as its modification time. | The generated script (`touch`) | `click_is_recent` | After 24 h. |
 
@@ -359,9 +359,9 @@ State outside the state directory:
 
 - **Alerter group** `herdr-dagadbm-notify-<pane>` (`notification_group_id` in `src/notify/util.rs`). One per pane, so a new notification replaces the pane's old one on screen.
 - **Plugin config** `$HERDR_PLUGIN_CONFIG_DIR/config.toml` (`config_path` in `src/notify/config.rs`, ADR 4). Read on every call. Written only by `init_config`.
-- **Herdr tab labels** carry the tab marker, and **the pane's display agent**, reported with `--source dagadbm` (`SOURCE` in `src/notify/tab_marker.rs`), carries the agent marker (ADR 10). The marker text is the only record of the mark.
+- **Herdr tab labels** carry the tab marker, and **the pane's display agent**, reported with `--source dagadbm` (`SOURCE` in `src/notify/tab_marker.rs`), carries the agent marker (ADR 9). The marker text is the only record of the mark.
 
-Files with names from before ADR 14 (`herdr-<pane>.*`, `focus-<hash>.sh`, `focus-origin-<workspace>.marker`, the `icons` folder) are deleted, and the old `terminal-memory.json` is renamed, by `remove_legacy_state_in` in `src/notify/state.rs`.
+Files with names from before ADR 13 (`herdr-<pane>.*`, `focus-<hash>.sh`, `focus-origin-<workspace>.marker`, the `icons` folder) are deleted, and the old `terminal-memory.json` is renamed, by `remove_legacy_state_in` in `src/notify/state.rs`.
 
 Cleanup runs in two places: on the `--cleanup` startup hook, and at the start of every `write_focus_script` call, that is on every send and every re-post (`src/notify/script.rs`). Both are best-effort.
 
@@ -391,25 +391,25 @@ Environment variables the binary reads: `HERDR_PLUGIN_EVENT`, `HERDR_PLUGIN_EVEN
 Each rule below says what must hold, why, and where it is enforced. Break one only together with a new or updated ADR.
 
 1. **A feature imports only its own code and `src/shared/`.** Why: a feature can be removed by deleting its folder and its manifest entries (ADR 1). Checked by `docs/update.sh`.
-2. **Every runtime name a feature creates starts with `herdr-dagadbm-<feature>`.** Why: a file in the shared state directory shows its owner, and features cannot collide (ADR 14). In `notify`, every name comes from `PREFIX` through `prefixed`, `notification_group_id` (`src/notify/util.rs`) or `namespace` (`src/notify/ledger.rs`).
+2. **Every runtime name a feature creates starts with `herdr-dagadbm-<feature>`.** Why: a file in the shared state directory shows its owner, and features cannot collide (ADR 13). In `notify`, every name comes from `PREFIX` through `prefixed`, `notification_group_id` (`src/notify/util.rs`) or `namespace` (`src/notify/ledger.rs`).
 3. **Settings live only in `$HERDR_PLUGIN_CONFIG_DIR/config.toml`.** Why: Herdr's own `config.toml` rejects unknown keys (ADR 4). Every key is optional, unknown keys are ignored, and a file that cannot be parsed is reported on stderr while the defaults apply (`load` in `src/notify/config.rs`). The file is read on every call, so nothing caches config.
 4. **`config.example.toml` lists every key with its default.** Why: `init_config` writes it as the user's starting file (`EXAMPLE_CONFIG`, ADR 4). The test `the_example_config_parses_to_the_defaults` in `src/notify/config.rs` checks part of this (see [Known discrepancies](#known-discrepancies)).
 5. **Templates use only Herdr's token names and render exactly as written.** A missing value renders empty. An unknown `{token}` stays as written. Nothing around an empty token is cleaned up. Why: users already know Herdr's syntax, and the config should match the output (ADR 5, ADR 6). Enforced by `TOKENS` and `render` in `src/notify/template.rs`.
 6. **alerter gets a non-empty message and text in `--option=value` form.** An empty message is sent as one space, and a whitespace-only subtitle is left out. Why: alerter refuses an empty `--message` (ADR 3, ADR 6), and a text that starts with `-` would be read as an option (`alerter_text_arg` in `src/notify/script.rs`).
-7. **A repeated status is skipped before any Herdr call, and the status is saved before the markers write.** Why: the agent marker's write makes Herdr send the same status again, which would notify twice (ADR 11). Enforced by the order in `run` in `src/notify/mod.rs`: `record_status` comes before `pane_details` and `sync_for_status`.
+7. **A repeated status is skipped before any Herdr call, and the status is saved before the markers write.** Why: the agent marker's write makes Herdr send the same status again, which would notify twice (ADR 10). Enforced by the order in `run` in `src/notify/mod.rs`: `record_status` comes before `pane_details` and `sync_for_status`.
 8. **One `agent get` serves both the skip decision and the text, and the skip comes before the text lookups.** Why: a suppressed notification must not pay for the other lookups (comment in `run`, `src/notify/mod.rs`).
 9. **Lookups are best-effort.** An unanswered `agent get` counts as an unfocused pane, so the notification is sent. An unanswered label renders as an empty token (`PaneDetails` in `src/notify/focus.rs`, `PaneLabels` in `src/notify/notification.rs`).
 10. **Herdr's reply must be about the pane that was asked about.** Why: a stale snapshot would name another pane on a notification that focuses this one (`pane_details_from_get_json` in `src/notify/focus.rs`).
 11. **The tab label is read before the marker changes it, and the notification shows it without the marker.** (`sync_for_status` in `src/notify/tab_marker.rs` returns the unmarked label, which `run` passes to `pane_labels`.)
-12. **Markers store nothing.** A label that starts with the icon and a space is marked. A focused pane is never marked. A tab the user renamed is left alone (ADR 10, `marked_label` and `unmarked_label` in `src/notify/tab_marker.rs`).
-13. **A report from an old posting changes nothing.** Why: a script can outlive its posting when a newer notification replaces it (ADR 13, `resolve_in` in `src/notify/ledger.rs` compares `post_id`).
-14. **A click stamps the click marker before it reports, and a close waits `CLOSE_SETTLE` before it reads the marker. A close that cannot be told apart counts as the user's.** Why: alerter 26.5 closes another notification on a click, and only timing tells the two apart (ADR 13, `alerter_focus_script` in `src/notify/script.rs`, `closed` in `src/notify/outcome.rs`).
-15. **A posting is re-posted at most once.** Why: two clicks at the same time must not show it twice (ADR 13). The claim file is created with `create_new` in `claim_repost_in` in `src/notify/ledger.rs`.
+12. **Markers store nothing.** A label that starts with the icon and a space is marked. A focused pane is never marked. A tab the user renamed is left alone (ADR 9, `marked_label` and `unmarked_label` in `src/notify/tab_marker.rs`).
+13. **A report from an old posting changes nothing.** Why: a script can outlive its posting when a newer notification replaces it (ADR 12, `resolve_in` in `src/notify/ledger.rs` compares `post_id`).
+14. **A click stamps the click marker before it reports, and a close waits `CLOSE_SETTLE` before it reads the marker. A close that cannot be told apart counts as the user's.** Why: alerter 26.5 closes another notification on a click, and only timing tells the two apart (ADR 12, `alerter_focus_script` in `src/notify/script.rs`, `closed` in `src/notify/outcome.rs`).
+15. **A posting is re-posted at most once.** Why: two clicks at the same time must not show it twice (ADR 12). The claim file is created with `create_new` in `claim_repost_in` in `src/notify/ledger.rs`.
 16. **Files that other processes read are written to a temp file and renamed into place.** This covers ledger records (`save_in`), terminal memory (`remember_bindings_into`), scripts (`write_focus_script`) and icons (`write_embedded_icon_into`). Why: concurrent hook processes, and `sh` reads a script while it runs, so a rename keeps the running copy intact (comment in `write_focus_script`).
 17. **A click does not teach the terminal binding.** Why: the app that was frontmost when the user clicked a notification is not the terminal. `focus_pane` writes a focus-origin marker that `learn_terminal_from_frontmost` honours for 15 s. Obvious non-terminal apps are rejected too (`is_obvious_non_terminal_bundle` in `src/notify/state.rs`).
 18. **A notification is removed on focus only when the frontmost app is the terminal bound to the workspace.** Why: the user only sees the pane then (`should_clear_notification_on_focus` in `src/notify/focus.rs`).
 19. **Terminal bindings are never pruned against an empty pane list.** Why: right after Herdr starts it may report no panes (`live_workspace_ids` in `src/notify/focus.rs`).
-20. **A terminal adapter returns no command when it cannot be sure, and any failure falls back to `open -b`.** Why: a wrong but successful command stops the core from trying the next client (ADR 12, `raise_client_container` in `src/notify/terminal/mod.rs`).
+20. **A terminal adapter returns no command when it cannot be sure, and any failure falls back to `open -b`.** Why: a wrong but successful command stops the core from trying the next client (ADR 11, `raise_client_container` in `src/notify/terminal/mod.rs`).
 21. **A bounded command leaves nothing running.** Why: a git or herdr descendant left behind would keep working in the pane's repository (`command_stdout_until` and `kill_process_group` in `src/notify/util.rs`). git also runs with `--no-optional-locks` so it never takes `.git/index.lock` while an agent uses git (`is_dirty` in `src/notify/git.rs`).
 
 ## Where to change X
@@ -425,11 +425,11 @@ Each rule below says what must hold, why, and where it is enforced. Break one on
 | Which Herdr lookups feed the text | `pane_labels` in `src/notify/focus.rs` | Keep them under `LOOKUP_BUDGET`. |
 | When a notification is skipped | `notification_decision` in `src/notify/focus.rs` | |
 | alerter arguments or the script | `alerter_focus_script` in `src/notify/script.rs` | Existing scripts keep the old text until rewritten. |
-| What a click, close or timeout does | `src/notify/outcome.rs`, `src/notify/ledger.rs` | ADR 13 |
-| Tab and agent markers | `src/notify/tab_marker.rs`, `MarkerConfig` in `src/notify/config.rs` | ADR 10 |
+| What a click, close or timeout does | `src/notify/outcome.rs`, `src/notify/ledger.rs` | ADR 12 |
+| Tab and agent markers | `src/notify/tab_marker.rs`, `MarkerConfig` in `src/notify/config.rs` | ADR 9 |
 | Terminal tab selection on click | `src/notify/terminal/` | [dev-guidelines.md](dev-guidelines.md#add-a-terminal-adapter) |
 | Agent icons | `AGENT_ICONS` in `src/notify/icons.rs` and `src/notify/assets/icons/agents/` | Update `NOTICE.md` for the license. |
-| A state file name or its retention | The owning module and `retention_for` in `src/notify/state.rs` | Rename old files in `remove_legacy_state_in` (ADR 14). |
+| A state file name or its retention | The owning module and `retention_for` in `src/notify/state.rs` | Rename old files in `remove_legacy_state_in` (ADR 13). |
 | The alerter or herdr search paths | `alerter_candidate_paths` in `src/notify/notifier.rs`, `herdr_candidate_paths` in `src/notify/executable.rs` | ADR 3 |
 | A hook or action | `herdr-plugin.toml`, `parse_cli_args` in `src/notify/cli.rs`, `run` in `src/notify/mod.rs` | [dev-guidelines.md](dev-guidelines.md#add-a-hook-or-action) |
 | A new feature | Follow the ordered recipe | [dev-guidelines.md](dev-guidelines.md#add-a-feature) |
@@ -448,9 +448,9 @@ Each rule below says what must hold, why, and where it is enforced. Break one on
 These are places where the code, the ADRs, the project rules and the config disagree. They are listed here, not resolved.
 
 1. **The config parity test is partial.** The project rule (invariant 4) is that `config.example.toml` matches the defaults and that a test enforces it. `the_example_config_parses_to_the_defaults` in `src/notify/config.rs` compares statuses, templates, sound, timeout and both markers. It does not compare `[notify.state_icons]`: those defaults live in `state_icon` in `src/notify/event.rs`, and `NotifyConfig::default()` has none. It also cannot notice a key that the example sets but the code does not read, because unknown keys are ignored.
-2. **One integration test runs the real `lsappinfo`.** `blocked_agent_marks_tab_and_agent_name_and_working_or_focus_restores_them` has no `lsappinfo` stub for its `pane.focused` step. This is accepted, because `lsappinfo` only reads. Tests that need Herdr use the isolated test server (ADR 15, [test-guidelines.md](test-guidelines.md#the-test-herdr-server)).
+2. **One integration test runs the real `lsappinfo`.** `blocked_agent_marks_tab_and_agent_name_and_working_or_focus_restores_them` has no `lsappinfo` stub for its `pane.focused` step. This is accepted, because `lsappinfo` only reads. Tests that need Herdr use the isolated test server (ADR 14, [test-guidelines.md](test-guidelines.md#the-test-herdr-server)).
 3. **Unit tests use the real fallback state directory.** `agent_icon_path` writes icons to `plugin_state_dir()`, which is `$HERDR_PLUGIN_STATE_DIR` or `<temp dir>/herdr-dagadbm-notify`, the directory the plugin itself uses. This happens in the tests of `src/notify/icons.rs` and in `renders_the_default_layout_from_herdr_labels` in `src/notify/event.rs`. The script tests in `src/notify/script.rs` read the real terminal memory through `remembered_terminal`.
 4. **The lookup budget is not the whole cost.** The comment on `LOOKUP_BUDGET` in `src/notify/mod.rs` says a slow Herdr costs at most that delay. But `write_focus_script` calls `prune_stale_workspace_bindings`, which runs an unbounded `herdr pane list` on every send when terminal memory exists. `frontmost_bundle_id` (`lsappinfo`), `hostname` and `remove_notification` are unbounded too.
-5. **ADRs 11, 13 and 14 call it "startup cleanup".** Cleanup also runs on every send and re-post, inside `write_focus_script` in `src/notify/script.rs`.
-6. **The naming rule has edges it does not cover.** ADR 14 says every file and folder a feature creates starts with its sub-plugin name. The icon folder does, but the files inside it (`codex-color.png` and the temp `.codex-color.png-<pid>-<seq>`) do not (`write_embedded_icon_into` in `src/notify/icons.rs`). The Herdr metadata source is `dagadbm` (`SOURCE` in `src/notify/tab_marker.rs`, as ADR 10 specifies), and the socket request id is `dagadbm:focus`. Neither is a file, so ADR 14 does not decide them.
+5. **ADRs 10, 12 and 13 call it "startup cleanup".** Cleanup also runs on every send and re-post, inside `write_focus_script` in `src/notify/script.rs`.
+6. **The naming rule has edges it does not cover.** ADR 13 says every file and folder a feature creates starts with its sub-plugin name. The icon folder does, but the files inside it (`codex-color.png` and the temp `.codex-color.png-<pid>-<seq>`) do not (`write_embedded_icon_into` in `src/notify/icons.rs`). The Herdr metadata source is `dagadbm` (`SOURCE` in `src/notify/tab_marker.rs`, as ADR 9 specifies), and the socket request id is `dagadbm:focus`. Neither is a file, so ADR 13 does not decide them.
 7. **Some leftovers are never cleaned.** `retention_for` in `src/notify/state.rs` returns no retention for a script temp file (`herdr-dagadbm-notify-focus-<hash>.<pid>.tmp`), the terminal-memory temp file, or the icons folder. They only stay behind after a crash between write and rename.

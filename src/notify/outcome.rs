@@ -1,6 +1,6 @@
 //! How a notification ended, as its generated script reports it: a click, a
 //! close, or anything else. A click also puts back the notifications alerter
-//! 26.5 closed along with it (ADR 13).
+//! 26.5 closed along with it (ADR 12).
 
 use std::thread;
 use std::time::Duration;

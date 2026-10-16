@@ -127,7 +127,7 @@ pub(crate) fn sanitize_group_id(value: &str) -> String {
         .collect()
 }
 
-/// The sub-plugin name (ADR 14). Every file, folder, alerter group and
+/// The sub-plugin name (ADR 13). Every file, folder, alerter group and
 /// temporary directory that `notify` creates starts with it.
 pub(crate) const PREFIX: &str = "herdr-dagadbm-notify";
 

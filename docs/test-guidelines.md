@@ -76,7 +76,7 @@ Tests that check timing (`CLICK_WINDOW`, `CLOSE_SETTLE`, `LOOKUP_BUDGET`) assert
 
 ## The `Session` helper
 
-`Session` in `tests/notify_cli_test.rs` sets up click, close and re-post flows (ADR 13). It is a workspace `repo` on the test Herdr server, with one tab labelled `status`. Tests name panes `w1:p2`, `w1:p3` and so on. `Session::pane` turns a name into a real pane, created on first use, and every method takes the name. Every pane is an unfocused agent. It provides:
+`Session` in `tests/notify_cli_test.rs` sets up click, close and re-post flows (ADR 12). It is a workspace `repo` on the test Herdr server, with one tab labelled `status`. Tests name panes `w1:p2`, `w1:p3` and so on. `Session::pane` turns a name into a real pane, created on first use, and every method takes the name. Every pane is an unfocused agent. It provides:
 
 - The real `herdr` through a logging wrapper, and stubs for `alerter`, `lsappinfo` and `open` (on `PATH`). `STUB_DIR` points at the session directory. `HERDR_SOCKET_PATH` is removed (`Session::command`), because a real click would move the shared server's focus; the wrapper still reaches the test server.
 - `notify(pane)`: sends a `blocked` event and waits for the posting.
@@ -84,7 +84,7 @@ Tests that check timing (`CLICK_WINDOW`, `CLOSE_SETTLE`, `LOOKUP_BUDGET`) assert
 - The file `shown` is what `alerter --list ALL` prints. The file `list-fails` makes the list fail.
 - `posts`, `posts_for`, `record`, `status`, `post_id`, `click_marker`, `cleared_marker`: read what happened.
 - `report(outcome, pane, post_id)`: calls `--notification-<outcome>` directly.
-- `forget_last_status(pane)`: lets the same status notify again (ADR 11).
+- `forget_last_status(pane)`: lets the same status notify again (ADR 10).
 - `finish()`: waits for every script, then removes the directory. Answer every notification first.
 
 ## The config example parity test
@@ -112,7 +112,7 @@ These existing tests break the rule. They are listed in [architecture.md](archit
 
 ## The test Herdr server
 
-A test that needs Herdr itself, not a stub, uses the real `herdr` against an isolated server (ADR 15). The server is `HerdrServer` in `tests/support/herdr_server.rs`. A test file loads it with `mod support;`.
+A test that needs Herdr itself, not a stub, uses the real `herdr` against an isolated server (ADR 14). The server is `HerdrServer` in `tests/support/herdr_server.rs`. A test file loads it with `mod support;`.
 
 - **Setup, once per test binary.** `HerdrServer::shared` starts the server on first use: the named session `herdr-dagadbm-test` under a throwaway `HOME` in `/tmp`. It has its own socket and state and loads none of your plugins. It never touches your own Herdr session.
 - **Teardown, once.** A watchdog process waits for the test binary to exit, then stops the server and deletes the throwaway `HOME`. This also runs after a panic or Ctrl-C.

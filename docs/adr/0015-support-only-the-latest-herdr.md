@@ -1,4 +1,4 @@
-# 16. Support only the latest Herdr
+# 15. Support only the latest Herdr
 
 Date: 2026-10-16
 
@@ -16,6 +16,6 @@ Support only the latest Herdr release. `min_herdr_version` in `herdr-plugin.toml
 
 ## Consequences
 
-- The code has one path per Herdr call, and the tests run against the installed, latest `herdr` (ADR 15).
+- The code has one path per Herdr call, and the tests run against the installed, latest `herdr` (ADR 14).
 - After a Herdr update, restart the Herdr server, or a running older server will answer the new plugin.
 - Bump `min_herdr_version` with each Herdr update the plugin depends on.

@@ -289,7 +289,7 @@ fn retention_for(
 }
 
 /// Whether `name` is a state file from before every name started with the
-/// sub-plugin name (ADR 14): `herdr-<pane>.*`, `focus-<hash>.sh`,
+/// sub-plugin name (ADR 13): `herdr-<pane>.*`, `focus-<hash>.sh`,
 /// `.focus-<hash>.<pid>.tmp`, `focus-origin-<ws>.marker` and the terminal
 /// memory with its temp file.
 fn is_legacy_state_file(name: &str) -> bool {
@@ -338,7 +338,7 @@ fn is_legacy_state_file(name: &str) -> bool {
     false
 }
 
-/// Moves state from the names used before ADR 14 out of the way: the terminal
+/// Moves state from the names used before ADR 13 out of the way: the terminal
 /// memory is renamed so bindings survive, the icons folder is removed (icons
 /// are rewritten on demand) and every other old file is deleted.
 fn remove_legacy_state_in(state_dir: &Path) -> io::Result<()> {

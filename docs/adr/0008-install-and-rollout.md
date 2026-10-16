@@ -1,4 +1,4 @@
-# 9. Identity, install and rollout
+# 8. Identity, install and rollout
 
 Date: 2026-10-15
 

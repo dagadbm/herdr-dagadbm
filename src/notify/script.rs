@@ -216,7 +216,7 @@ fn alerter_focus_script(
 
     // Every end is reported to the ledger with the posting it ends. A click
     // stamps the click marker first, since it can close another notification
-    // (ADR 13); a close is checked against that stamp; anything else, a
+    // (ADR 12); a close is checked against that stamp; anything else, a
     // timeout or a removal, is done.
     let report = |outcome: &str| {
         format!("{focus_binary_q} notify --notification-{outcome} {pane_q} {post_q}")

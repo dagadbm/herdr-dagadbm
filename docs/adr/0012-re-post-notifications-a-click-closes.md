@@ -1,4 +1,4 @@
-# 13. Re-post notifications that a click closes
+# 12. Re-post notifications that a click closes
 
 Date: 2026-10-15
 
@@ -32,7 +32,7 @@ A collateral close and a real close print the same thing. Only the timing tells 
 - `done`: the pane was focused (the `.cleared` marker flow), the notification was clicked, it timed out, or it ended any other way.
 - `dismissed`: the user pressed the close button.
 
-A new notification for a pane replaces that pane's record, as its alerter group replaces the old notification on screen. Each posting has a `post_id`. The generated script reports back with it, so a script that outlived its posting changes nothing. The sound is not stored. Startup cleanup removes records, re-post claims and the click marker older than 24 hours, like `.last-status` files (ADR 11).
+A new notification for a pane replaces that pane's record, as its alerter group replaces the old notification on screen. Each posting has a `post_id`. The generated script reports back with it, so a script that outlived its posting changes nothing. The sound is not stored. Startup cleanup removes records, re-post claims and the click marker older than 24 hours, like `.last-status` files (ADR 10).
 
 **Click.** The script touches `herdr-dagadbm-notify.repost.click` and then runs `notify --notification-clicked <pane> <post_id>`. That command marks the record done and focuses the pane. If another record is pending, it then waits one second, runs `alerter --list ALL` and keeps only the `herdr-dagadbm-notify-` groups. Every other pending record whose group is not listed is posted again, by a new script with its own notifier loop, so it can be clicked or closed again. The re-post uses the stored strings and plays no sound.
 

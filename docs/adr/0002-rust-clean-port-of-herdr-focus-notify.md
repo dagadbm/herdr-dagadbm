@@ -23,7 +23,7 @@ herdr-focus-notify does more than send notifications:
 
 Write the plugin in Rust. Port herdr-focus-notify's tested logic into `src/notify/`: the focus detection, the terminal bindings, the click-to-focus over the Herdr socket, the kitty and iTerm2 window targeting, the bounded Herdr and git lookups, and the bundled agent icons.
 
-Keep all of the focus behaviour listed above, and add no config flags for it. The defaults are what is wanted. A flag can be added later, under `[notify]`, if a real need appears. Later ADRs extend this behaviour: ADR 12 adds terminal adapters and ADR 13 adds the re-post of closed notifications.
+Keep all of the focus behaviour listed above, and add no config flags for it. The defaults are what is wanted. A flag can be added later, under `[notify]`, if a real need appears. Later ADRs extend this behaviour: ADR 11 adds terminal adapters and ADR 12 adds the re-post of closed notifications.
 
 Replace its hardcoded notification layout with configurable templates (ADR 5, ADR 6). Drop what the templates no longer need, such as the diffstat and the branch truncation. The original's MIT license is credited in the README and in `src/notify/mod.rs`.
 

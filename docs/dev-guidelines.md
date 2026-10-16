@@ -16,7 +16,7 @@ When a decision changes, add an ADR in `docs/adr/` or update the one that record
 
 ## Run it locally
 
-1. Build, then link the checkout as the installed plugin. Linking does not run the build, so build first (ADR 9):
+1. Build, then link the checkout as the installed plugin. Linking does not run the build, so build first (ADR 8):
 
    ```sh
    cargo build --release && herdr plugin link .
@@ -32,11 +32,11 @@ When a decision changes, add an ADR in `docs/adr/` or update the one that record
 4. Send a test notification for the focused pane: `herdr plugin action invoke dagadbm.notify-test`.
 5. The config file is in `herdr plugin config-dir dagadbm`. The state files are in `$HERDR_PLUGIN_STATE_DIR` (see [architecture.md](architecture.md#runtime-state)).
 
-Herdr refuses `herdr plugin install` over a linked plugin. Run `herdr plugin unlink dagadbm` first when you go back to the installed version (ADR 9).
+Herdr refuses `herdr plugin install` over a linked plugin. Run `herdr plugin unlink dagadbm` first when you go back to the installed version (ADR 8).
 
 ## Ship it
 
-The installed plugin comes from GitHub (ADR 9).
+The installed plugin comes from GitHub (ADR 8).
 
 1. Push to `main`.
 2. Run `~/dotfiles/herdr-update.sh`. It reinstalls the plugin and the Claude integration.
@@ -49,13 +49,13 @@ Each recipe lists the files to touch, in order.
 ### Add a feature
 
 1. **Create `src/<feature>/mod.rs`** with an entry point shaped like `run` in `src/notify/mod.rs`: it takes the remaining arguments and returns `Result<(), String>`. Parse arguments like `parse_cli_args` in `src/notify/cli.rs`, and support `-h`/`--help`.
-2. **Add a prefix constant** for the sub-plugin name `herdr-dagadbm-<feature>`, like `PREFIX` in `src/notify/util.rs`. Following `notify`, put it in `src/<feature>/util.rs`. Build every file, folder, alerter group and temp directory name from it. When `HERDR_PLUGIN_STATE_DIR` is not set, use `<temp dir>/herdr-dagadbm-<feature>`, like `plugin_state_dir` in `src/notify/state.rs` (ADR 14).
+2. **Add a prefix constant** for the sub-plugin name `herdr-dagadbm-<feature>`, like `PREFIX` in `src/notify/util.rs`. Following `notify`, put it in `src/<feature>/util.rs`. Build every file, folder, alerter group and temp directory name from it. When `HERDR_PLUGIN_STATE_DIR` is not set, use `<temp dir>/herdr-dagadbm-<feature>`, like `plugin_state_dir` in `src/notify/state.rs` (ADR 13).
 3. **Register it in `src/main.rs`**: the `mod` line, the `match` arm in `run`, and a line in `USAGE`.
 4. **Add its config section** `[<feature>]` to `config.example.toml`, with every key and its default, if the feature has settings. Load it in `src/<feature>/config.rs` from `$HERDR_PLUGIN_CONFIG_DIR/config.toml`, like `load` in `src/notify/config.rs`. Add a parity test there like `the_example_config_parses_to_the_defaults`, which reads the example through `include_str!` of `config.example.toml` (`EXAMPLE_CONFIG`). The loader must follow the same rules: every key optional, unknown keys ignored, a parse error reported on stderr with defaults applied (ADR 4). `notify`'s `ConfigFile` ignores other sections, so a new section does not disturb it. `--init-config` writes the whole `config.example.toml` (`EXAMPLE_CONFIG`), so it already includes the new section.
 5. **Add its hooks to `herdr-plugin.toml`** under a `# --- <feature> ---` comment. Commands run `target/release/dagadbm <feature> ...`. Action ids start with `<feature>-` (ADR 1). An event that `notify` also handles gets its own `[[events]]` entry.
 6. **Add `tests/<feature>_cli_test.rs`** that runs the binary against stubs ([test-guidelines.md](test-guidelines.md)).
 7. **Run `docs/update.sh`.** It adds the feature's modules to the graph and reports any import of another feature's code.
-8. **Move shared code to `src/shared/`** only when a second feature needs it. Shared code takes the prefix as an argument (ADR 1, ADR 14).
+8. **Move shared code to `src/shared/`** only when a second feature needs it. Shared code takes the prefix as an argument (ADR 1, ADR 13).
 9. **Document it**: a section in `README.md` under Features, an ADR for any decision, and rows in the runtime state table of [architecture.md](architecture.md#runtime-state) for each file it creates.
 
 The feature is done when `dagadbm <feature> --help` works and the [checks](#checks-before-you-commit) pass.
@@ -97,11 +97,11 @@ Only add a token that Herdr itself defines (ADR 5).
 
 1. **Create `src/notify/terminal/<terminal>.rs`** with a unit struct that implements `TerminalAdapter` from `src/notify/terminal/mod.rs`:
    - `bundle_id` returns the app's bundle id, as stored in terminal bindings.
-   - `focus_command` returns a `FocusCommand` that focuses the client's container, or `None`. Return `None` when a variable is missing or malformed: check ids character by character, as `Kitty` and `Wezterm` do. Return `None` for clients that only inherited the terminal's variables: check `TERM_PROGRAM`, as `Iterm2`, `Wezterm` and `Ghostty` do. A wrong command that succeeds stops the core from trying other clients (ADR 12).
+   - `focus_command` returns a `FocusCommand` that focuses the client's container, or `None`. Return `None` when a variable is missing or malformed: check ids character by character, as `Kitty` and `Wezterm` do. Return `None` for clients that only inherited the terminal's variables: check `TERM_PROGRAM`, as `Iterm2`, `Wezterm` and `Ghostty` do. A wrong command that succeeds stops the core from trying other clients (ADR 11).
    - Read the client's environment with `HerdrClient::env` and its directory from `cwd`.
 2. **Register it in `src/notify/terminal/mod.rs`**: a `mod` line and an entry in `ADAPTERS`.
 3. **Unit tests** in the new file: build clients with `HerdrClient::from_pairs` and `with_cwd`, and assert the exact `FocusCommand`. Add the bundle id to `finds_adapters_by_bundle_id` in `src/notify/terminal/mod.rs`. `adapter_bundle_ids_are_unique` covers the new entry by itself. Do not start the real terminal in a test.
-4. **Docs**: the terminal list in ADR 12.
+4. **Docs**: the terminal list in ADR 11.
 5. **Run `docs/update.sh`** for the new module.
 
 ### Add a hook or action
@@ -116,7 +116,7 @@ For `notify`:
 
 ### Add a state file
 
-1. Build the name with `prefixed` from `src/notify/util.rs`, or under a namespace like `namespace` in `src/notify/ledger.rs` (ADR 14). Put the pane in a name through `sanitize_group_id`.
+1. Build the name with `prefixed` from `src/notify/util.rs`, or under a namespace like `namespace` in `src/notify/ledger.rs` (ADR 13). Put the pane in a name through `sanitize_group_id`.
 2. Put the file in `plugin_state_dir()` from `src/notify/state.rs`.
 3. If other processes read it while it changes, write a temp file and rename it into place, like `save_in` in `src/notify/ledger.rs`.
 4. Give it a retention in `retention_for` in `src/notify/state.rs`. A file with no retention is never cleaned.
@@ -170,5 +170,5 @@ These describe how the existing code is written. Follow them so new code reads t
 
 - Items are `pub(crate)` when another module uses them, and private otherwise.
 - The crate depends only on `serde`, `serde_json` and `toml` (`Cargo.toml`). Timeouts, process groups and the process environment are done with `std` and two libc calls (`kill` in `src/notify/util.rs`, `sysctl` in `src/notify/terminal/client.rs`). Each `unsafe` block has a `SAFETY:` comment.
-- Doc comments explain why, and cite ADRs by number, for example "(ADR 13)".
+- Doc comments explain why, and cite ADRs by number, for example "(ADR 12)".
 - Comments and docs are plain English prose.

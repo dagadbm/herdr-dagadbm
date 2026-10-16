@@ -1,6 +1,6 @@
 use std::process::Command;
 
-/// The sub-plugin name every runtime name starts with (ADR 14).
+/// The sub-plugin name every runtime name starts with (ADR 13).
 const PREFIX: &str = "herdr-dagadbm-notify";
 const TERMINAL_MEMORY: &str = "herdr-dagadbm-notify-terminal-memory.json";
 
@@ -1677,7 +1677,7 @@ fi
     }
 
     /// Forgets the pane's last agent status, so the next `blocked` event
-    /// notifies again (ADR 11).
+    /// notifies again (ADR 10).
     fn forget_last_status(&self, pane: &str) {
         fs::remove_file(
             self.state_dir()

@@ -1,4 +1,4 @@
-# 11. Skip a repeated agent status
+# 10. Skip a repeated agent status
 
 Date: 2026-10-15
 
@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-Herdr sends `pane.agent_status_changed` again when the pane's metadata changes, even if the status is the same. The agent marker (ADR 10) changes the display agent with `pane report-metadata`, so every marked status came back as a second event, and the plugin sent a second notification.
+Herdr sends `pane.agent_status_changed` again when the pane's metadata changes, even if the status is the same. The agent marker (ADR 9) changes the display agent with `pane report-metadata`, so every marked status came back as a second event, and the plugin sent a second notification.
 
 Herdr starts a new plugin process for each event, so the plugin cannot keep the last status in memory.
 

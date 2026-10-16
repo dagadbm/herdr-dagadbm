@@ -1,4 +1,4 @@
-# 10. Mark the tab and pane label of an agent that needs you
+# 9. Mark the tab and pane label of an agent that needs you
 
 Date: 2026-10-15
 

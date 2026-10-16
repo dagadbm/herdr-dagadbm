@@ -202,7 +202,7 @@ where
     let monitor_visibility = decision == NotificationDecision::SendWithVisibilityMonitor;
 
     // The ledger keeps the notification as sent, so a click that closes it by
-    // mistake can post it again (ADR 13). Best-effort: without the record the
+    // mistake can post it again (ADR 12). Best-effort: without the record the
     // notification still goes out, it just cannot come back.
     let record = ledger::Record::new(notification, options.timeout_secs, monitor_visibility);
     let _ = ledger::save(&record);

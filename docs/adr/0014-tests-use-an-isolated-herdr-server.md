@@ -1,4 +1,4 @@
-# 15. Tests use an isolated Herdr server
+# 14. Tests use an isolated Herdr server
 
 Date: 2026-10-16
 
