@@ -1224,6 +1224,7 @@ fn config_file_selects_statuses_and_templates() {
     assert!(notifier_output.contains("--sound\nPing\n"));
     assert!(notifier_output.contains("--timeout\n30\n"));
     assert_eq!(notifier_output.matches("--title=").count(), 1);
+    wait_for_detached_notifier(&temp_dir.join("state"));
     fs::remove_dir_all(temp_dir).unwrap();
 }
 

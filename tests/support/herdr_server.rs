@@ -104,13 +104,18 @@ impl HerdrServer {
 
     /// The environment for anything that talks to this server: the user's
     /// Herdr variables removed, `HOME` and the session set to the test ones.
+    ///
+    /// Panes run `/bin/sh`, not the user's shell. A shell like zsh would look
+    /// for its config in the throwaway `HOME` and, finding none, could stop at
+    /// a first-run prompt that swallows the commands tests send to the pane.
     fn isolated(&self, mut command: Command) -> Command {
         for name in INHERITED_HERDR_VARS {
             command.env_remove(name);
         }
         command
             .env("HOME", &self.home)
-            .env("HERDR_SESSION", SESSION);
+            .env("HERDR_SESSION", SESSION)
+            .env("SHELL", "/bin/sh");
         command
     }
 
