@@ -25,6 +25,8 @@ use std::time::{Duration, Instant};
 use std::os::unix::process::CommandExt;
 
 const SESSION: &str = "herdr-dagadbm-test";
+/// Written into `HOME` once the server is ready, with the lobby's ID.
+const LOBBY_FILE: &str = "lobby";
 const START_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// The variables Herdr sets inside its own panes. A test run from a Herdr pane
@@ -68,7 +70,11 @@ impl HerdrServer {
         let herdr_bin = find_herdr();
         // macOS limits a socket path to about 104 bytes, and the socket lives
         // under `HOME`, so `HOME` has to be a short path in `/tmp`.
-        let home = PathBuf::from(format!("/tmp/hdt-{}", std::process::id()));
+        let owner = owner_pid();
+        let home = PathBuf::from(format!("/tmp/hdt-{owner}"));
+        if let Some(server) = HerdrServer::reuse(&herdr_bin, &home) {
+            return server;
+        }
         if home.exists() {
             fs::remove_dir_all(&home).unwrap();
         }
@@ -95,11 +101,31 @@ impl HerdrServer {
             // server to the watchdog instead of killing it half-way.
             .process_group(0);
         command.spawn().unwrap();
-        server.start_watchdog();
+        server.start_watchdog(owner);
         server.wait_until_ready();
         // The first workspace takes the focus. It belongs to no test.
         server.lobby = server.workspace().workspace_id;
+        // Written last: its presence tells a later test binary of the same
+        // `cargo test` that the server is ready.
+        fs::write(server.home.join(LOBBY_FILE), &server.lobby).unwrap();
         server
+    }
+
+    /// The server an earlier test binary of the same `cargo test` started, if
+    /// it is still answering.
+    fn reuse(herdr_bin: &Path, home: &Path) -> Option<HerdrServer> {
+        let lobby = fs::read_to_string(home.join(LOBBY_FILE)).ok()?;
+        let server = HerdrServer {
+            herdr_bin: herdr_bin.to_path_buf(),
+            home: home.to_path_buf(),
+            socket: home
+                .join(".config/herdr/sessions")
+                .join(SESSION)
+                .join("herdr.sock"),
+            lobby,
+        };
+        server.try_herdr(&["status", "server"])?;
+        Some(server)
     }
 
     /// The environment for anything that talks to this server: the user's
@@ -119,9 +145,9 @@ impl HerdrServer {
         command
     }
 
-    /// Stops the server and deletes `HOME` once the test binary has exited.
+    /// Stops the server and deletes `HOME` once the process `owner` has exited.
     #[allow(clippy::zombie_processes)]
-    fn start_watchdog(&self) {
+    fn start_watchdog(&self, owner: u32) {
         let script = r#"
             while kill -0 "$1" 2>/dev/null; do sleep 0.2; done
             HOME="$2" HERDR_SESSION="$3" "$4" server stop >/dev/null 2>&1
@@ -130,7 +156,7 @@ impl HerdrServer {
         let mut command = self.isolated(Command::new("/bin/sh"));
         command
             .args(["-c", script, "herdr-dagadbm-test-watchdog"])
-            .arg(std::process::id().to_string())
+            .arg(owner.to_string())
             .arg(&self.home)
             .arg(SESSION)
             .arg(&self.herdr_bin)
@@ -385,6 +411,24 @@ impl Drop for FocusGuard<'_> {
         let _ = self
             .server
             .herdr_output(&["workspace", "focus", &self.server.lobby]);
+    }
+}
+
+/// The process whose exit ends the server. Under `cargo test` it is cargo
+/// itself, so the unit and integration test binaries, which run one after the
+/// other, share one server. Run directly, it is the test binary.
+fn owner_pid() -> u32 {
+    let own = std::process::id();
+    let parent = std::os::unix::process::parent_id();
+    let name = Command::new("ps")
+        .args(["-o", "comm=", "-p", &parent.to_string()])
+        .output()
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        .unwrap_or_default();
+    if name.rsplit('/').next() == Some("cargo") {
+        parent
+    } else {
+        own
     }
 }
 

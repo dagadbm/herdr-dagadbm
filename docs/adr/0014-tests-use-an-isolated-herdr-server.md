@@ -14,10 +14,10 @@ Herdr can run a named session (`HERDR_SESSION`) with its own socket and state. A
 
 ## Decision
 
-Tests that need Herdr run the real `herdr` against one isolated server per test binary: `HerdrServer` in `tests/support/herdr_server.rs`.
+Tests that need Herdr run the real `herdr` against one isolated server per `cargo test` run, shared by its test binaries: `HerdrServer` in `tests/support/herdr_server.rs`.
 
 - The first test that needs it starts the session `herdr-dagadbm-test` under a short throwaway `HOME` in `/tmp`. The path is short because macOS limits a socket path to about 104 bytes.
-- A watchdog process stops the server and deletes that `HOME` once the test binary exits.
+- A watchdog process stops the server and deletes that `HOME` once `cargo` exits, or the test binary when it runs without `cargo`. The unit and integration test binaries run one after the other, so the second reuses the first's server.
 - Each test creates its own workspace on the shared server.
 - The tests run in every `cargo test`. A missing `herdr` fails them.
 
