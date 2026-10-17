@@ -172,3 +172,4 @@ These describe how the existing code is written. Follow them so new code reads t
 - The crate depends only on `serde`, `serde_json` and `toml` (`Cargo.toml`). Timeouts, process groups and the process environment are done with `std` and two libc calls (`kill` in `src/notify/util.rs`, `sysctl` in `src/notify/terminal/client.rs`). Each `unsafe` block has a `SAFETY:` comment.
 - Doc comments explain why, and cite ADRs by number, for example "(ADR 12)".
 - Comments and docs are plain English prose.
+- Functions stay at a cognitive complexity of 10 or less. `clippy::cognitive_complexity` enforces it (`Cargo.toml` `[lints.clippy]`, threshold in `clippy.toml`), and the pre-push hook fails on it. Split the function instead of raising the threshold.

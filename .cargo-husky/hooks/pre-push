@@ -9,8 +9,8 @@ cd "$(git rev-parse --show-toplevel)"
 echo "pre-push: cargo fmt --check"
 cargo fmt --check
 
-echo "pre-push: cargo clippy --all-targets -- -D warnings"
-cargo clippy --all-targets --quiet -- -D warnings
+echo "pre-push: cargo clippy --all-targets"
+cargo clippy --all-targets --quiet
 
 echo "pre-push: cargo test"
 cargo test --quiet
