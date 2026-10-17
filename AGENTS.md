@@ -26,6 +26,9 @@ cargo fmt && cargo clippy --all-targets && cargo test
 # Needs: cargo install cargo-llvm-cov cargo-crap --locked
 scripts/pre-push.sh
 
+# After editing a file in .cargo-husky/hooks/, reinstall the git hooks.
+cargo clean -p cargo-husky && cargo test --no-run
+
 # Regenerate the module dependency graph in docs/architecture.md.
 docs/update.sh
 

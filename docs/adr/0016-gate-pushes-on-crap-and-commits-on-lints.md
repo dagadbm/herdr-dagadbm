@@ -22,3 +22,4 @@ Clippy's `cognitive_complexity` lint caps nesting-heavy functions, but it ignore
 - Commits stay fast. Complexity regressions surface at push, not at commit.
 - fmt and clippy appear in both scripts.
 - `cargo-llvm-cov` and `cargo-crap` must be installed (`cargo install cargo-llvm-cov cargo-crap --locked`). The script names the missing tool.
+- Editing a hook file does not update `.git/hooks` on its own. Run `cargo clean -p cargo-husky && cargo test --no-run` to reinstall.
