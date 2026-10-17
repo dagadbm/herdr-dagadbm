@@ -1212,6 +1212,12 @@ fn config_file_selects_statuses_and_templates() {
     assert!(run("working").status.success());
     let notifier_output = wait_for_notifier_output(&notifier_log);
 
+    assert_configured_notification(&notifier_output);
+    wait_for_detached_notifier(&temp_dir.join("state"));
+    fs::remove_dir_all(temp_dir).unwrap();
+}
+
+fn assert_configured_notification(notifier_output: &str) {
     assert!(
         notifier_output.contains("--title=Codex on status\n"),
         "{notifier_output}"
@@ -1224,8 +1230,6 @@ fn config_file_selects_statuses_and_templates() {
     assert!(notifier_output.contains("--sound\nPing\n"));
     assert!(notifier_output.contains("--timeout\n30\n"));
     assert_eq!(notifier_output.matches("--title=").count(), 1);
-    wait_for_detached_notifier(&temp_dir.join("state"));
-    fs::remove_dir_all(temp_dir).unwrap();
 }
 
 #[cfg(unix)]
@@ -1766,25 +1770,7 @@ fn a_click_reposts_the_notification_it_closed_silently_and_unchanged() {
     );
     let p3 = session.posts_for("w1:p3");
     assert_eq!(p3.len(), 2, "{p3:?}");
-    assert!(p3[0].contains("|--sound|Ping|"), "{}", p3[0]);
-    // The same stored text, the same group and timeout, and no sound.
-    assert_eq!(p3[1], p3[0].replace("--sound|Ping|", ""));
-    // The subtitle names the pane by the last part of its ID.
-    let p3_name = session
-        .pane("w1:p3")
-        .rsplit(':')
-        .next()
-        .unwrap()
-        .to_string();
-    assert!(
-        p3[1].contains(&format!("--subtitle=Codex · {p3_name}|")),
-        "{}",
-        p3[1]
-    );
-    // The re-post is silent and restarts the stored timeout in full (the
-    // stub ignores `--timeout`, so only the argument is checked).
-    assert!(!p3[1].contains("--sound"), "{}", p3[1]);
-    assert!(p3[1].contains("|--timeout|600|"), "{}", p3[1]);
+    assert_silent_unchanged_repost(&session, &p3);
     assert_eq!(session.posts_for("w1:p4").len(), 1);
     assert_eq!(session.posts_for("w1:p2").len(), 1);
     assert_eq!(session.status("w1:p2"), "done");
@@ -2217,4 +2203,26 @@ fn a_stale_click_focuses_and_reposts_others_but_not_its_own_pane() {
     session.answer("w1:p2", "@TIMEOUT");
     session.answer("w1:p3", "@TIMEOUT");
     session.finish();
+}
+
+fn assert_silent_unchanged_repost(session: &Session, p3: &[String]) {
+    assert!(p3[0].contains("|--sound|Ping|"), "{}", p3[0]);
+    // The same stored text, the same group and timeout, and no sound.
+    assert_eq!(p3[1], p3[0].replace("--sound|Ping|", ""));
+    // The subtitle names the pane by the last part of its ID.
+    let p3_name = session
+        .pane("w1:p3")
+        .rsplit(':')
+        .next()
+        .unwrap()
+        .to_string();
+    assert!(
+        p3[1].contains(&format!("--subtitle=Codex · {p3_name}|")),
+        "{}",
+        p3[1]
+    );
+    // The re-post is silent and restarts the stored timeout in full (the
+    // stub ignores `--timeout`, so only the argument is checked).
+    assert!(!p3[1].contains("--sound"), "{}", p3[1]);
+    assert!(p3[1].contains("|--timeout|600|"), "{}", p3[1]);
 }

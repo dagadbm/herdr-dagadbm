@@ -343,6 +343,20 @@ mod tests {
         assert!(script.contains("--app-icon '/tmp/codex icon.png'"));
         assert!(script.contains("--actions 'Focus'"));
         assert!(!script.contains("--close-label"));
+    }
+
+    #[test]
+    fn alerter_script_skips_a_cleared_notification_and_focuses_on_click() {
+        let script = focus_script_content_with_timeout(
+            &sample_notification(),
+            "1-2-3",
+            "/usr/local/bin/herdr",
+            "/opt/homebrew/bin/alerter",
+            &AlerterOptions::default(),
+            None,
+            Path::new("/tmp/dagadbm"),
+        );
+
         assert!(script.contains(".cleared' ] && exit 0"));
         assert!(
             script.find(".cleared' ] && exit 0").unwrap()

@@ -122,6 +122,10 @@ mod tests {
             parse_cli_args(["--clear-terminal-bindings"]).unwrap(),
             CliAction::ClearTerminalBindings
         );
+    }
+
+    #[test]
+    fn parses_pane_arguments() {
         assert_eq!(
             parse_cli_args(["--check-pane-visibility", "w1:p2"]).unwrap(),
             CliAction::CheckPaneVisibility("w1:p2".to_string())
