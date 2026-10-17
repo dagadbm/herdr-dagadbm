@@ -6,6 +6,7 @@ How the tests are organised, how the stubs work, and how to add a test. The arch
 
 ```sh
 cargo test                                          # everything
+scripts/pre-push.sh                                  # fmt, clippy, everything under coverage (target/lcov.info), then the CRAP gate
 cargo test --bin dagadbm <name>                     # unit tests whose name contains <name>
 cargo test --test notify_cli_test <name>            # integration tests whose name contains <name>
 ```

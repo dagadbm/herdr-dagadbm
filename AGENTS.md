@@ -6,6 +6,7 @@ A Herdr plugin (`herdr-plugin.toml`, id `dagadbm`) written in Rust. It is macOS 
 
 - `src/main.rs` reads the feature name and passes the remaining arguments to that feature.
 - `src/<feature>/` holds all of one feature's code and assets. A feature imports only its own code and `src/shared/`.
+- `scripts/` holds the checks that the git hooks and CI run: `pre-commit.sh` (fmt, clippy) and `pre-push.sh` (fmt, clippy, tests under coverage, CRAP gate).
 - `config.example.toml` has one section per feature and lists every key with its default.
 - [docs/architecture.md](docs/architecture.md): how the plugin works, its invariants, its runtime state, and where to change what. Start here.
 - [docs/glossary.md](docs/glossary.md): every term, its code identifiers, and Herdr's name for it.
@@ -17,9 +18,13 @@ A Herdr plugin (`herdr-plugin.toml`, id `dagadbm`) written in Rust. It is macOS 
 
 ```sh
 # Format, lint and test. All three must be clean before committing.
-# The first `cargo test` in a clone installs the pre-push hook (cargo-husky, .cargo-husky/hooks/).
+# The first `cargo test` in a clone installs the pre-commit (fmt, clippy) and pre-push (fmt, clippy, tests, CRAP) hooks (cargo-husky, .cargo-husky/hooks/).
 # Tests that need Herdr start their own isolated server (needs herdr installed).
 cargo fmt && cargo clippy --all-targets && cargo test
+
+# The pre-push checks, including coverage (target/lcov.info) and the CRAP gate.
+# Needs: cargo install cargo-llvm-cov cargo-crap --locked
+scripts/pre-push.sh
 
 # Regenerate the module dependency graph in docs/architecture.md.
 docs/update.sh

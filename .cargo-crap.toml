@@ -1,0 +1,2 @@
+# Functions scoring above this CRAP value fail `scripts/coverage.sh`.
+threshold = 30
