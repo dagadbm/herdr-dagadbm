@@ -17,10 +17,11 @@ mod state;
 mod tab_marker;
 mod template;
 mod terminal;
+mod timings;
 mod util;
 
 use std::env;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use cli::{parse_cli_args, print_usage, CliAction, Outcome};
 use event::{
@@ -42,19 +43,12 @@ use state::{
     prune_stale_workspace_bindings, record_status, reset_notification_clearance,
 };
 
-/// Time the Herdr and git calls behind one notification get, together: the
-/// `agent get` that decides whether to show it, and the lookups behind its
-/// text. Every one of them is best-effort, so a slow Herdr or a pathological
-/// repository costs at most this much delay, and the notification goes out
-/// with whatever was answered in time.
-const LOOKUP_BUDGET: Duration = Duration::from_secs(2);
-
 pub(crate) fn run<I, S>(args: I) -> Result<(), String>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
 {
-    let action = parse_cli_args(args)?;
+    let (action, timings) = parse_cli_args(args)?;
 
     match action {
         CliAction::Help => {
@@ -90,18 +84,18 @@ where
             return Ok(());
         }
         CliAction::FocusPane(pane_id) => {
-            return focus::focus_pane(&pane_id);
+            return focus::focus_pane(&pane_id, &timings);
         }
         CliAction::NotificationEnded(how, pane_id, post_id) => {
             return match how {
-                Outcome::Clicked => outcome::clicked(&pane_id, &post_id),
-                Outcome::Closed => outcome::closed(&pane_id, &post_id),
+                Outcome::Clicked => outcome::clicked(&pane_id, &post_id, &timings),
+                Outcome::Closed => outcome::closed(&pane_id, &post_id, &timings),
                 Outcome::Ended => outcome::ended(&pane_id, &post_id),
             };
         }
         CliAction::CheckPaneVisibility(pane_id) => {
             let herdr_bin = resolve_herdr_bin()?;
-            let deadline = Instant::now() + LOOKUP_BUDGET;
+            let deadline = Instant::now() + timings.lookup_budget;
             let details = pane_details(&pane_id, &herdr_bin, deadline).unwrap_or_default();
             if notification_decision(&pane_id, details.focused) == NotificationDecision::Skip {
                 return Ok(());
@@ -152,7 +146,7 @@ where
     // decision runs before the remaining Herdr and git calls, because a
     // suppressed notification must not pay for them. An unanswered lookup
     // counts as unfocused, so the notification is sent.
-    let deadline = Instant::now() + LOOKUP_BUDGET;
+    let deadline = Instant::now() + timings.lookup_budget;
     let details = pane_details(&event.pane_id, &herdr_bin, deadline).unwrap_or_default();
 
     // The tab label is read before the marker changes it, so the
@@ -198,6 +192,7 @@ where
             config.timeout_secs
         },
         sound: config.sound.clone(),
+        timings,
     };
     let monitor_visibility = decision == NotificationDecision::SendWithVisibilityMonitor;
 

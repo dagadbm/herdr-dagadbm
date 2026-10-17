@@ -1,3 +1,5 @@
+use crate::notify::timings::Timings;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CliAction {
     Event,
@@ -20,18 +22,21 @@ pub(crate) enum Outcome {
     Ended,
 }
 
-/// Parses the arguments after `dagadbm notify`.
-pub(crate) fn parse_cli_args<I, S>(args: I) -> Result<CliAction, String>
+/// Parses the arguments after `dagadbm notify`. `--integration-tests`, which
+/// is not in the usage text, picks the short waits the integration tests need.
+pub(crate) fn parse_cli_args<I, S>(args: I) -> Result<(CliAction, Timings), String>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
 {
     let mut action = CliAction::Event;
+    let mut timings = Timings::production();
 
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         let arg = arg.as_ref();
         match arg {
+            "--integration-tests" => timings = Timings::integration_tests(),
             "--test" => set_action(&mut action, CliAction::Test, arg)?,
             "-h" | "--help" => set_action(&mut action, CliAction::Help, arg)?,
             "--init-config" => set_action(&mut action, CliAction::InitConfig, arg)?,
@@ -81,7 +86,7 @@ where
         }
     }
 
-    Ok(action)
+    Ok((action, timings))
 }
 
 fn set_action(action: &mut CliAction, next: CliAction, arg: &str) -> Result<(), String> {
@@ -107,19 +112,19 @@ mod tests {
     #[test]
     fn parses_cli_actions() {
         assert_eq!(
-            parse_cli_args(Vec::<&str>::new()).unwrap(),
+            parse_cli_args(Vec::<&str>::new()).unwrap().0,
             CliAction::Event
         );
-        assert_eq!(parse_cli_args(["--test"]).unwrap(), CliAction::Test);
-        assert_eq!(parse_cli_args(["--help"]).unwrap(), CliAction::Help);
-        assert_eq!(parse_cli_args(["-h"]).unwrap(), CliAction::Help);
+        assert_eq!(parse_cli_args(["--test"]).unwrap().0, CliAction::Test);
+        assert_eq!(parse_cli_args(["--help"]).unwrap().0, CliAction::Help);
+        assert_eq!(parse_cli_args(["-h"]).unwrap().0, CliAction::Help);
         assert_eq!(
-            parse_cli_args(["--init-config"]).unwrap(),
+            parse_cli_args(["--init-config"]).unwrap().0,
             CliAction::InitConfig
         );
-        assert_eq!(parse_cli_args(["--cleanup"]).unwrap(), CliAction::Cleanup);
+        assert_eq!(parse_cli_args(["--cleanup"]).unwrap().0, CliAction::Cleanup);
         assert_eq!(
-            parse_cli_args(["--clear-terminal-bindings"]).unwrap(),
+            parse_cli_args(["--clear-terminal-bindings"]).unwrap().0,
             CliAction::ClearTerminalBindings
         );
     }
@@ -127,11 +132,15 @@ mod tests {
     #[test]
     fn parses_pane_arguments() {
         assert_eq!(
-            parse_cli_args(["--check-pane-visibility", "w1:p2"]).unwrap(),
+            parse_cli_args(["--check-pane-visibility", "w1:p2"])
+                .unwrap()
+                .0,
             CliAction::CheckPaneVisibility("w1:p2".to_string())
         );
         assert_eq!(
-            parse_cli_args(["--notification-clicked", "w1:p2", "1-2-3"]).unwrap(),
+            parse_cli_args(["--notification-clicked", "w1:p2", "1-2-3"])
+                .unwrap()
+                .0,
             CliAction::NotificationEnded(
                 Outcome::Clicked,
                 "w1:p2".to_string(),
@@ -139,12 +148,31 @@ mod tests {
             )
         );
         assert_eq!(
-            parse_cli_args(["--notification-closed", "w1:p2", "1-2-3"]).unwrap(),
+            parse_cli_args(["--notification-closed", "w1:p2", "1-2-3"])
+                .unwrap()
+                .0,
             CliAction::NotificationEnded(Outcome::Closed, "w1:p2".to_string(), "1-2-3".to_string())
         );
         assert_eq!(
-            parse_cli_args(["--notification-ended", "w1:p2", "1-2-3"]).unwrap(),
+            parse_cli_args(["--notification-ended", "w1:p2", "1-2-3"])
+                .unwrap()
+                .0,
             CliAction::NotificationEnded(Outcome::Ended, "w1:p2".to_string(), "1-2-3".to_string())
+        );
+    }
+
+    #[test]
+    fn integration_tests_flag_picks_short_timings_for_any_command() {
+        let (action, timings) = parse_cli_args(["--integration-tests"]).unwrap();
+        assert_eq!(action, CliAction::Event);
+        assert_eq!(timings, Timings::integration_tests());
+        let (action, timings) =
+            parse_cli_args(["--notification-closed", "w1:p2", "1", "--integration-tests"]).unwrap();
+        assert!(matches!(action, CliAction::NotificationEnded(..)));
+        assert!(timings.integration_tests);
+        assert_eq!(
+            parse_cli_args(["--cleanup"]).unwrap().1,
+            Timings::production()
         );
     }
 

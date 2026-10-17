@@ -11,6 +11,7 @@ use crate::notify::state::{
     cleanup_stale_state_files, cleared_notification_marker_path, plugin_state_dir,
     prune_stale_workspace_bindings, remembered_terminal,
 };
+use crate::notify::timings::Timings;
 use crate::notify::util::{prefixed, shell_quote, PREFIX};
 
 /// The notification's one button, and the text alerter prints when it is
@@ -24,6 +25,8 @@ pub(crate) struct AlerterOptions {
     pub(crate) timeout_secs: u64,
     /// An alerter sound name; None plays no sound.
     pub(crate) sound: Option<String>,
+    /// The waits the script and the commands it runs use.
+    pub(crate) timings: Timings,
 }
 
 /// Writes the script that shows one posting of a notification and reports
@@ -169,8 +172,9 @@ fn alerter_focus_script(
     let click_marker_q = shell_quote(click_marker_path().to_string_lossy().as_ref());
     let visibility_check_command = visibility_check_binary.map(|binary| {
         format!(
-            "{} notify --check-pane-visibility {}",
+            "{} notify{} --check-pane-visibility {}",
             shell_quote(binary.to_string_lossy().as_ref()),
+            options.timings.flag(),
             pane_q
         )
     });
@@ -198,7 +202,8 @@ fn alerter_focus_script(
     ));
     if let Some(ref visibility_check_command) = visibility_check_command {
         script.push_str(&format!(
-            "(\n  while kill -0 \"$notifier_pid\" 2>/dev/null; do\n    sleep 2\n    kill -0 \"$notifier_pid\" 2>/dev/null || exit 0\n    if {visibility_check} >/dev/null 2>&1 && {notifier} --remove {group} >/dev/null 2>&1; then\n      exit 0\n    fi\n  done\n) &\nmonitor_pid=$!\n",
+            "(\n  while kill -0 \"$notifier_pid\" 2>/dev/null; do\n    sleep {poll}\n    kill -0 \"$notifier_pid\" 2>/dev/null || exit 0\n    if {visibility_check} >/dev/null 2>&1 && {notifier} --remove {group} >/dev/null 2>&1; then\n      exit 0\n    fi\n  done\n) &\nmonitor_pid=$!\n",
+            poll = options.timings.monitor_poll.as_secs_f64(),
             visibility_check = visibility_check_command,
             notifier = notifier_q,
             group = group_q,
@@ -219,7 +224,10 @@ fn alerter_focus_script(
     // (ADR 12); a close is checked against that stamp; anything else, a
     // timeout or a removal, is done.
     let report = |outcome: &str| {
-        format!("{focus_binary_q} notify --notification-{outcome} {pane_q} {post_q}")
+        format!(
+            "{focus_binary_q} notify{} --notification-{outcome} {pane_q} {post_q}",
+            options.timings.flag()
+        )
     };
     script.push_str("if [ \"$notifier_status\" -ne 0 ]; then\n");
     script.push_str(&format!("    {} >/dev/null 2>&1\n", report("ended")));
@@ -413,6 +421,7 @@ mod tests {
             &AlerterOptions {
                 timeout_secs: 0,
                 sound: Some("Ping".to_string()),
+                ..Default::default()
             },
             None,
             Path::new("/tmp/dagadbm"),
@@ -464,6 +473,7 @@ mod tests {
             &AlerterOptions {
                 timeout_secs: 120,
                 sound: None,
+                ..Default::default()
             },
             None,
             Path::new("/tmp/dagadbm"),
@@ -485,6 +495,7 @@ mod tests {
             &AlerterOptions {
                 timeout_secs: 3600,
                 sound: None,
+                ..Default::default()
             },
             None,
             Path::new("/tmp/dagadbm"),
@@ -506,6 +517,7 @@ mod tests {
             &AlerterOptions {
                 timeout_secs: 3600,
                 sound: None,
+                ..Default::default()
             },
             None,
             Path::new("/tmp/dagadbm"),
@@ -524,6 +536,7 @@ mod tests {
             &AlerterOptions {
                 timeout_secs: 0,
                 sound: None,
+                ..Default::default()
             },
             None,
             Path::new("/tmp/dagadbm"),
@@ -549,6 +562,7 @@ mod tests {
             &AlerterOptions {
                 timeout_secs: 3600,
                 sound: None,
+                ..Default::default()
             },
             None,
             Path::new("/tmp/dagadbm"),
@@ -570,6 +584,7 @@ mod tests {
             &AlerterOptions {
                 timeout_secs: 3600,
                 sound: None,
+                ..Default::default()
             },
             Some(Path::new("/tmp/dagadbm")),
             Path::new("/tmp/dagadbm"),

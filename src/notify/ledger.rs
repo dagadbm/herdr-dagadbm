@@ -18,10 +18,6 @@ use crate::notify::notification::FocusNotification;
 use crate::notify::state::plugin_state_dir;
 use crate::notify::util::{sanitize_group_id, PREFIX};
 
-/// How long after a click a close counts as caused by that click, and how
-/// long the click waits before it looks for the notifications it closed.
-pub(crate) const CLICK_WINDOW: Duration = Duration::from_secs(1);
-
 /// Every ledger file starts with `herdr-dagadbm-notify.repost.`, followed by
 /// its kind: `record.<pane>.json`, `claim.<pane>.<post_id>` or `click`.
 fn namespace() -> String {
@@ -117,7 +113,7 @@ pub(crate) fn click_marker_path() -> PathBuf {
 }
 
 /// Whether a notification was clicked within the click window.
-pub(crate) fn click_is_recent() -> bool {
+pub(crate) fn click_is_recent(click_window: Duration) -> bool {
     fs::metadata(click_marker_path())
         .and_then(|metadata| metadata.modified())
         .ok()
@@ -126,7 +122,7 @@ pub(crate) fn click_is_recent() -> bool {
             SystemTime::now()
                 .duration_since(clicked)
                 .unwrap_or(Duration::ZERO)
-                < CLICK_WINDOW
+                < click_window
         })
 }
 

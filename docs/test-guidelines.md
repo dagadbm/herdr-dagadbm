@@ -64,6 +64,10 @@ For the Herdr socket, use `focus_socket(expected_pane_id, response)`. It binds a
 - **Capture what the binary sends** through the stub logs. Assert on alerter's arguments for the notification text, on the `herdr` log for markers and lookups, and on state files for the ledger.
 - **Capture a real event from Herdr** when you need a new fixture: in a local debug build, print `HERDR_PLUGIN_EVENT_JSON` to stderr from `run` in `src/notify/mod.rs`, trigger the event, and read it with `herdr plugin log list --plugin dagadbm`. Remove the print before you commit. Copy only the fields the code reads into the test.
 
+## Short waits
+
+`binary()` starts the plugin with the hidden flag `--integration-tests`. It swaps every wait for the short one in `Timings::integration_tests` (`src/notify/timings.rs`): the click window, the close settle, the lookup budget, the focus socket timeout and the visibility monitor poll. The generated scripts pass the flag on to the commands they run. A test that asserts a time compares it with these values, not the production ones.
+
 ## Waiting for detached work
 
 The binary starts the notification script with `nohup` and exits at once, so the work continues after `output()` returns. Wait for it with a bounded poll, never with a single sleep:
@@ -125,7 +129,7 @@ A test that needs Herdr itself, not a stub, uses the real `herdr` against an iso
 - **Git repositories for setup** come from `real_git` in `tests/notify_cli_test.rs`, which ignores your git config. The plugin's own `git` calls still go to a stub.
 - **A missing `herdr` fails the test.** It is never skipped.
 
-These tests keep a fake instead, because the real server cannot produce what they test: a missing or broken `herdr` binary (`test_mode_reports_bad_configured_herdr_binary`, `focus_click_without_terminal_binding_does_not_activate_or_focus`), and a click socket that fails, never answers or must not move the shared focus (`focus_click_reports_*`, `a_stale_click_focuses_and_reposts_others_but_not_its_own_pane`, the click in `notification_focus_does_not_overwrite_existing_terminal_binding`, through `focus_socket`).
+These tests keep a fake instead, because the real server cannot produce what they test: a missing or broken `herdr` binary (`test_mode_reports_bad_configured_herdr_binary`, `focus_click_without_terminal_binding_does_not_activate_or_focus`), and a click socket that fails or must not move the shared focus (`focus_click_reports_*`, `a_stale_click_focuses_and_reposts_others_but_not_its_own_pane`, the click in `notification_focus_does_not_overwrite_existing_terminal_binding`, through `focus_socket`).
 
 `focus_event_removes_notification_for_foreground_terminal` is the model: it fakes a blocked agent, marks the tab, sends `pane.focused`, and checks that the real tab label lost its marker.
 

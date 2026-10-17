@@ -95,6 +95,7 @@ flowchart LR
     notify_terminal_iterm2["terminal::iterm2"]
     notify_terminal_kitty["terminal::kitty"]
     notify_terminal_wezterm["terminal::wezterm"]
+    notify_timings["timings"]
     notify_util["util"]
   end
   main --> notify
@@ -110,6 +111,7 @@ flowchart LR
   notify --> notify_state
   notify --> notify_tab_marker
   notify --> notify_util
+  notify_cli --> notify_timings
   notify_event --> notify_config
   notify_event --> notify_icons
   notify_event --> notify_notification
@@ -119,6 +121,7 @@ flowchart LR
   notify_focus --> notify_notification
   notify_focus --> notify_state
   notify_focus --> notify_terminal
+  notify_focus --> notify_timings
   notify_focus --> notify_util
   notify_git --> notify_util
   notify_icons --> notify_state
@@ -134,9 +137,11 @@ flowchart LR
   notify_outcome --> notify_notifier
   notify_outcome --> notify_script
   notify_outcome --> notify_state
+  notify_outcome --> notify_timings
   notify_script --> notify_ledger
   notify_script --> notify_notification
   notify_script --> notify_state
+  notify_script --> notify_timings
   notify_script --> notify_util
   notify_state --> notify_focus
   notify_state --> notify_ledger

@@ -9,12 +9,8 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use crate::notify::notification::PaneLabels;
+use crate::notify::timings::Timings;
 use crate::notify::util::{command_stdout, command_stdout_until, workspace_of};
-
-/// How long a notification click waits for Herdr's pane focus response. A real
-/// click runs detached, where an unanswered request would leave a stray process
-/// behind; `--test` runs in the foreground and would hang the action outright.
-const FOCUS_SOCKET_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The `{"result": ...}` wrapper around every Herdr CLI reply.
 #[derive(Debug, Deserialize)]
@@ -301,7 +297,7 @@ fn workspace_label_from_list_json(json: &str, workspace_id: &str) -> Option<Stri
 /// notification click is intentionally a no-op. A binding is checked again
 /// here at click time because generated notification scripts can outlive the
 /// state that existed when they were written.
-pub(crate) fn focus_pane(pane_id: &str) -> Result<(), String> {
+pub(crate) fn focus_pane(pane_id: &str, timings: &Timings) -> Result<(), String> {
     let workspace = workspace_of(pane_id);
     let Some(bound_terminal) = crate::notify::state::remembered_terminal(workspace) else {
         return Ok(());
@@ -318,7 +314,7 @@ pub(crate) fn focus_pane(pane_id: &str) -> Result<(), String> {
         }
         activate_terminal(&bound_terminal)?;
         let socket_path = socket_path.ok_or("HERDR_SOCKET_PATH is unavailable")?;
-        focus_pane_via_socket(pane_id, &socket_path)
+        focus_pane_via_socket(pane_id, &socket_path, timings.focus_socket_timeout)
     })();
 
     if result.is_err() {
@@ -328,11 +324,15 @@ pub(crate) fn focus_pane(pane_id: &str) -> Result<(), String> {
     result
 }
 
-fn focus_pane_via_socket(pane_id: &str, socket_path: &str) -> Result<(), String> {
+fn focus_pane_via_socket(
+    pane_id: &str,
+    socket_path: &str,
+    timeout: Duration,
+) -> Result<(), String> {
     let mut stream = UnixStream::connect(socket_path)
         .map_err(|err| format!("failed to connect to Herdr socket {socket_path}: {err}"))?;
     stream
-        .set_read_timeout(Some(FOCUS_SOCKET_TIMEOUT))
+        .set_read_timeout(Some(timeout))
         .map_err(|err| format!("failed to configure Herdr socket timeout: {err}"))?;
     let request = serde_json::json!({
         "id": "dagadbm:focus",
@@ -351,10 +351,7 @@ fn focus_pane_via_socket(pane_id: &str, socket_path: &str) -> Result<(), String>
         .read_line(&mut response_line)
         .map_err(|err| {
             if matches!(err.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) {
-                format!(
-                    "timed out after {}s waiting for Herdr's pane focus response",
-                    FOCUS_SOCKET_TIMEOUT.as_secs()
-                )
+                format!("timed out after {timeout:?} waiting for Herdr's pane focus response")
             } else {
                 format!("failed to read pane focus response: {err}")
             }
@@ -562,6 +559,34 @@ fn notification_decision_from_bundles(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::net::UnixListener;
+
+    /// A socket that accepts the connection and never answers must end in the
+    /// client's own read timeout, not hang. The listener stays open for the
+    /// whole call, so the client cannot be unblocked by a close.
+    #[test]
+    fn a_socket_that_never_answers_times_out() {
+        let socket = std::env::temp_dir().join(format!("hdt-focus-{}.sock", std::process::id()));
+        let _ = std::fs::remove_file(&socket);
+        let listener = UnixListener::bind(&socket).unwrap();
+
+        let started = Instant::now();
+        let result = focus_pane_via_socket(
+            "w2:p7",
+            socket.to_str().unwrap(),
+            Duration::from_millis(100),
+        );
+        let elapsed = started.elapsed();
+        drop(listener);
+        std::fs::remove_file(&socket).unwrap();
+
+        let err = result.unwrap_err();
+        assert!(err.contains("timed out after 100ms"), "{err}");
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "client waited {elapsed:?}"
+        );
+    }
 
     #[test]
     fn reads_pane_details_from_agent_get_json() {

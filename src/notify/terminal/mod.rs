@@ -95,7 +95,7 @@ pub(crate) fn raise_client_container(
 
     let mut last_error = format!("no Herdr client with a controllable {bound_terminal} container");
     for (_, command) in &commands {
-        match run_focus_command(command) {
+        match run_focus_command(command, FOCUS_COMMAND_TIMEOUT) {
             Ok(()) => return Ok(()),
             Err(err) => last_error = err,
         }
@@ -103,7 +103,7 @@ pub(crate) fn raise_client_container(
     Err(last_error)
 }
 
-fn run_focus_command(command: &FocusCommand) -> Result<(), String> {
+fn run_focus_command(command: &FocusCommand, timeout: Duration) -> Result<(), String> {
     let program = command.program.to_string_lossy();
     let mut child = Command::new(&command.program)
         .args(&command.args)
@@ -113,7 +113,7 @@ fn run_focus_command(command: &FocusCommand) -> Result<(), String> {
         .spawn()
         .map_err(|err| format!("failed to run {program}: {err}"))?;
 
-    let deadline = Instant::now() + FOCUS_COMMAND_TIMEOUT;
+    let deadline = Instant::now() + timeout;
     loop {
         match child.try_wait() {
             Ok(Some(status)) if status.success() => return Ok(()),
@@ -165,18 +165,27 @@ mod tests {
     #[test]
     fn runs_focus_commands_and_reports_failures() {
         assert_eq!(
-            run_focus_command(&FocusCommand::new("true", [""; 0])),
+            run_focus_command(&FocusCommand::new("true", [""; 0]), FOCUS_COMMAND_TIMEOUT),
             Ok(())
         );
-        assert!(run_focus_command(&FocusCommand::new("false", [""; 0])).is_err());
-        assert!(run_focus_command(&FocusCommand::new("/nonexistent/focus", [""; 0])).is_err());
+        assert!(
+            run_focus_command(&FocusCommand::new("false", [""; 0]), FOCUS_COMMAND_TIMEOUT).is_err()
+        );
+        assert!(run_focus_command(
+            &FocusCommand::new("/nonexistent/focus", [""; 0]),
+            FOCUS_COMMAND_TIMEOUT
+        )
+        .is_err());
     }
 
     #[test]
     fn times_out_focus_commands() {
         let started = Instant::now();
-        let result = run_focus_command(&FocusCommand::new("sleep", ["10"]));
+        let result = run_focus_command(
+            &FocusCommand::new("sleep", ["10"]),
+            Duration::from_millis(100),
+        );
         assert_eq!(result, Err("sleep timed out".to_string()));
-        assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 }

@@ -3,29 +3,24 @@
 //! 26.5 closed along with it (ADR 12).
 
 use std::thread;
-use std::time::Duration;
 
 use crate::notify::executable::resolve_herdr_bin;
 use crate::notify::focus;
-use crate::notify::ledger::{self, Status, CLICK_WINDOW};
+use crate::notify::ledger::{self, Status};
 use crate::notify::notifier::{resolve_notifier_bin, send_notification, shown_groups};
 use crate::notify::script::{write_focus_script, AlerterOptions};
 use crate::notify::state::cleared_notification_marker_path;
-
-/// How long a close waits before it reads the click marker. A click and the
-/// close it causes report at about the same moment, and the click's stamp has
-/// to land first.
-const CLOSE_SETTLE: Duration = Duration::from_millis(200);
+use crate::notify::timings::Timings;
 
 /// The user clicked the notification: it is done, and its pane is focused.
 /// Then, after the click window, every other pending notification that is no
 /// longer shown is posted again.
-pub(crate) fn clicked(pane_id: &str, post_id: &str) -> Result<(), String> {
+pub(crate) fn clicked(pane_id: &str, post_id: &str, timings: &Timings) -> Result<(), String> {
     // Resolved first, so a second click that re-posts does not take this one
     // for a notification it closed.
     let _ = ledger::resolve(pane_id, Some(post_id), Status::Done);
-    let focused = focus::focus_pane(pane_id);
-    repost_closed_by_click(pane_id);
+    let focused = focus::focus_pane(pane_id, timings);
+    repost_closed_by_click(pane_id, timings);
     focused
 }
 
@@ -34,11 +29,11 @@ pub(crate) fn clicked(pane_id: &str, post_id: &str) -> Result<(), String> {
 /// one leaves it pending, for the click to post again; a close that cannot be
 /// told apart counts as the user's, because showing a notification the user
 /// closed is worse than missing one.
-pub(crate) fn closed(pane_id: &str, post_id: &str) -> Result<(), String> {
-    thread::sleep(CLOSE_SETTLE);
+pub(crate) fn closed(pane_id: &str, post_id: &str, timings: &Timings) -> Result<(), String> {
+    thread::sleep(timings.close_settle);
     let status = if cleared_notification_marker_path(pane_id).exists() {
         Status::Done
-    } else if ledger::click_is_recent() {
+    } else if ledger::click_is_recent(timings.click_window) {
         return Ok(());
     } else {
         Status::Dismissed
@@ -57,7 +52,7 @@ pub(crate) fn ended(pane_id: &str, post_id: &str) -> Result<(), String> {
 /// Posts again, silently and with their stored text, the pending notifications
 /// of other panes that are no longer shown. Best-effort: without alerter's
 /// list nothing is known, and nothing is posted.
-fn repost_closed_by_click(clicked_pane: &str) {
+fn repost_closed_by_click(clicked_pane: &str, timings: &Timings) {
     let others_pending = || {
         ledger::pending_records()
             .into_iter()
@@ -66,7 +61,7 @@ fn repost_closed_by_click(clicked_pane: &str) {
     if !others_pending() {
         return;
     }
-    thread::sleep(CLICK_WINDOW);
+    thread::sleep(timings.click_window);
 
     let (Ok(notifier_bin), Ok(herdr_bin)) = (resolve_notifier_bin(), resolve_herdr_bin()) else {
         return;
@@ -82,7 +77,7 @@ fn repost_closed_by_click(clicked_pane: &str) {
             continue;
         }
         // Posted too recently for the list to show it yet.
-        if record.posted_at_ms + CLICK_WINDOW.as_millis() as u64 > listed_at {
+        if record.posted_at_ms + timings.click_window.as_millis() as u64 > listed_at {
             continue;
         }
         // Its pane was focused meanwhile.
@@ -96,6 +91,7 @@ fn repost_closed_by_click(clicked_pane: &str) {
         let options = AlerterOptions {
             timeout_secs: record.timeout_secs,
             sound: None,
+            timings: *timings,
         };
         if let Ok(script_path) = write_focus_script(
             &record.notification,
