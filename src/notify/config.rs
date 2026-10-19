@@ -19,6 +19,8 @@ pub(crate) const DEFAULT_TITLE: &str = "⌂ {workspace} ▸ {tab}";
 pub(crate) const DEFAULT_SUBTITLE: &str = "";
 pub(crate) const DEFAULT_MESSAGE: &str = "{state_icon} {terminal_title_stripped}";
 pub(crate) const DEFAULT_MARKER_ICON: &str = "🟡";
+/// The agent name is drawn in the label's own colour, where a colour emoji looks out of place.
+pub(crate) const DEFAULT_AGENT_MARKER_ICON: &str = "●";
 pub(crate) const DEFAULT_MARKER_STATUSES: &[&str] = &["blocked", "done"];
 
 /// The commented config `notify-init-config` writes. It spells out every
@@ -66,11 +68,11 @@ pub(crate) struct MarkerConfig {
 }
 
 impl MarkerConfig {
-    fn from_section(section: MarkerSection) -> Self {
+    fn from_section(section: MarkerSection, default_icon: &str) -> Self {
         let icon = section
             .icon
             .map(|icon| icon.trim().to_string())
-            .unwrap_or_else(|| DEFAULT_MARKER_ICON.to_string());
+            .unwrap_or_else(|| default_icon.to_string());
         Self {
             // An empty icon would match every label, so it disables the marker.
             enabled: section.enabled.unwrap_or(true) && !icon.is_empty(),
@@ -155,9 +157,15 @@ impl NotifyConfig {
                 .into_iter()
                 .map(|(status, icon)| (status.trim().to_ascii_lowercase(), icon))
                 .collect(),
-            tab_marker: MarkerConfig::from_section(section.tab_marker),
-            agent_marker: MarkerConfig::from_section(section.agent_marker),
-            workspace_marker: MarkerConfig::from_section(section.workspace_marker),
+            tab_marker: MarkerConfig::from_section(section.tab_marker, DEFAULT_MARKER_ICON),
+            agent_marker: MarkerConfig::from_section(
+                section.agent_marker,
+                DEFAULT_AGENT_MARKER_ICON,
+            ),
+            workspace_marker: MarkerConfig::from_section(
+                section.workspace_marker,
+                DEFAULT_MARKER_ICON,
+            ),
         }
     }
 
@@ -306,7 +314,15 @@ mod tests {
         assert!(marker.marks("blocked"));
         assert!(marker.marks("done"));
         assert!(!marker.marks("working"));
-        assert_eq!(parse("").unwrap().agent_marker, marker);
+        let agent = parse("").unwrap().agent_marker;
+        assert_eq!(agent.icon, "●");
+        assert_eq!(
+            MarkerConfig {
+                icon: marker.icon.clone(),
+                ..agent
+            },
+            marker
+        );
         assert_eq!(parse("").unwrap().workspace_marker, marker);
     }
 

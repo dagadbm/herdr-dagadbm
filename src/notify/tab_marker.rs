@@ -345,7 +345,7 @@ mod tests {
                 "tab|rename|w1:t1|🟡 mobile zsh",
                 "workspace|get|w1",
                 "workspace|rename|w1|🟡 dotfiles",
-                "pane|report-metadata|w1:p2|--source|dagadbm|--display-agent|🟡 claude",
+                "pane|report-metadata|w1:p2|--source|dagadbm|--display-agent|● claude",
             ]
         );
         assert_eq!(herdr.label(), "🟡 mobile zsh");
@@ -358,7 +358,7 @@ mod tests {
 
         sync_for_status(
             &NotifyConfig::default(),
-            &herdr.event("working", "🟡 claude"),
+            &herdr.event("working", "● claude"),
             &herdr.unfocused_in_tab(),
             &herdr.bin(),
             deadline(),
@@ -394,7 +394,7 @@ mod tests {
         assert_eq!(herdr.label(), "🟡   my tab 🟡 x");
         sync_for_status(
             &config,
-            &herdr.event("working", "🟡 codex"),
+            &herdr.event("working", "● codex"),
             &details,
             &herdr.bin(),
             deadline(),
@@ -454,7 +454,7 @@ mod tests {
 
         assert_eq!(
             herdr.take_calls(),
-            ["pane|report-metadata|w1:p2|--source|dagadbm|--display-agent|🟡 claude"]
+            ["pane|report-metadata|w1:p2|--source|dagadbm|--display-agent|● claude"]
         );
     }
 
@@ -569,7 +569,7 @@ mod tests {
             [
                 "workspace|get|w1",
                 "workspace|rename|w1|🟡 dotfiles",
-                "pane|report-metadata|w1:p2|--source|dagadbm|--display-agent|🟡 claude"
+                "pane|report-metadata|w1:p2|--source|dagadbm|--display-agent|● claude"
             ]
         );
     }
@@ -580,7 +580,7 @@ mod tests {
 
         let original = sync_for_status(
             &NotifyConfig::default(),
-            &herdr.event("blocked", "🟡 claude"),
+            &herdr.event("blocked", "● claude"),
             &herdr.unfocused_in_tab(),
             &herdr.bin(),
             deadline(),

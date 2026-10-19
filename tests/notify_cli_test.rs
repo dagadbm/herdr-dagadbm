@@ -20,7 +20,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(unix)]
 mod support;
 #[cfg(unix)]
-use support::herdr_server::HerdrServer;
+use support::herdr_server::{HerdrServer, Workspace};
 
 /// The alerter group of a pane's notification.
 #[cfg(unix)]
@@ -629,6 +629,86 @@ fn unfocused_pane_does_not_start_a_visibility_monitor() {
     assert!(!script.contains("--check-pane-visibility"), "{script}");
     drop(focus);
     wait_for_detached_notifier(&temp_dir.join("state"));
+    fs::remove_dir_all(temp_dir).unwrap();
+}
+
+/// Gives the workspace and its tab `name`, and a blocked agent in its pane.
+#[cfg(unix)]
+fn name_with_blocked_agent(herdr: &HerdrServer, workspace: &Workspace, name: &str) {
+    herdr.rename_workspace(&workspace.workspace_id, name);
+    herdr.rename_tab(&workspace.tab_id, name);
+    herdr.report_agent(&workspace.pane_id, "claude", "blocked");
+}
+
+/// Two workspaces with one tab and one agent each. The user is looking at the
+/// first one, in its terminal. Herdr reports each pane's focus, so nothing is
+/// remembered about it: the focused agent's event is skipped, and the other
+/// agent's event notifies and marks its own workspace only.
+#[cfg(unix)]
+#[test]
+fn an_agent_notifies_for_its_own_pane_only_when_another_workspace_is_focused() {
+    let temp_dir = temp_test_dir();
+    let state_dir = temp_dir.join("state");
+    let herdr = HerdrServer::shared();
+
+    let seen = herdr.workspace();
+    let away = herdr.workspace();
+    name_with_blocked_agent(herdr, &seen, "seen");
+    name_with_blocked_agent(herdr, &away, "away");
+    let _focus = herdr.focus(&seen);
+
+    write_fixed_frontmost(&temp_dir, "com.example.terminal");
+    write_terminal_binding(&state_dir, &seen.workspace_id, "com.example.terminal");
+    write_executable(
+        &temp_dir.join("alerter"),
+        "#!/bin/sh\nprintf '%s\\n' \"$@\" >> \"$NOTIFIER_LOG\"\n",
+    );
+    let notifier_log = temp_dir.join("notifier.log");
+    let path = path_with_temp_dir(&temp_dir);
+
+    let blocked = |pane: &str| {
+        let mut command = binary();
+        herdr.connect(&mut command);
+        let output = command
+            .env("HERDR_PLUGIN_EVENT", "pane.agent_status_changed")
+            .env(
+                "HERDR_PLUGIN_EVENT_JSON",
+                format!(
+                    r#"{{"event":"pane.agent_status_changed","data":{{"pane_id":"{pane}","agent_status":"blocked","agent":"claude"}}}}"#
+                ),
+            )
+            .env("HERDR_PLUGIN_STATE_DIR", &state_dir)
+            .env("NOTIFIER_LOG", &notifier_log)
+            .env("PATH", &path)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+
+    blocked(&seen.pane_id);
+    wait_for_detached_notifier(&state_dir);
+    assert!(
+        !notifier_log.exists(),
+        "the focused agent notified: {}",
+        fs::read_to_string(&notifier_log).unwrap_or_default()
+    );
+    assert_eq!(herdr.workspace_label(&seen.workspace_id), "seen");
+    assert_eq!(herdr.tab_label(&seen.tab_id), "seen");
+
+    blocked(&away.pane_id);
+    let notified = wait_for_notifier_output(&notifier_log);
+    assert!(notified.contains(&group(&away.pane_id)), "{notified}");
+    assert!(!notified.contains(&group(&seen.pane_id)), "{notified}");
+    assert_eq!(herdr.workspace_label(&away.workspace_id), "🟡 away");
+    assert_eq!(herdr.tab_label(&away.tab_id), "🟡 away");
+    assert_eq!(herdr.workspace_label(&seen.workspace_id), "seen");
+    assert_eq!(herdr.tab_label(&seen.tab_id), "seen");
+
+    wait_for_detached_notifier(&state_dir);
     fs::remove_dir_all(temp_dir).unwrap();
 }
 
@@ -1266,14 +1346,14 @@ fn blocked_agent_marks_tab_and_agent_name_and_working_or_focus_restores_them() {
     assert_eq!(herdr.tab_label(tab), "🟡 status");
     assert!(
         log.contains(&format!(
-            "pane report-metadata {pane} --source dagadbm --display-agent 🟡 claude\n"
+            "pane report-metadata {pane} --source dagadbm --display-agent ● claude\n"
         )),
         "{log}"
     );
 
     let log = run(
         "pane.agent_status_changed",
-        status_event("working", "🟡 claude"),
+        status_event("working", "● claude"),
     );
     assert_eq!(herdr.tab_label(tab), "status");
     assert!(
@@ -1357,17 +1437,17 @@ fn a_repeated_agent_status_notifies_once_and_leaves_herdr_alone() {
     };
 
     let log = run(&p2, "blocked", "claude", true);
-    assert!(log.contains("--display-agent 🟡 claude\n"), "{log}");
+    assert!(log.contains("--display-agent ● claude\n"), "{log}");
 
     // The echo of the agent marker: same status, marked agent name.
-    let log = run(&p2, "blocked", "🟡 claude", false);
+    let log = run(&p2, "blocked", "● claude", false);
     assert_eq!(log, "", "a repeat must not call Herdr");
 
     // Another pane keeps its own last status.
     run(&p3, "blocked", "claude", true);
 
     // A real change, and a return to blocked, each notify again.
-    run(&p2, "working", "🟡 claude", false);
+    run(&p2, "working", "● claude", false);
     run(&p2, "blocked", "claude", true);
 
     // Give a wrongly sent extra notification time to show up.

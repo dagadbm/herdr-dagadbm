@@ -45,7 +45,7 @@ statuses = ["blocked", "done"]
 
 [notify.agent_marker]
 enabled = true
-icon = "🟡"
+icon = "●"
 statuses = ["blocked", "done"]
 
 [notify.workspace_marker]
