@@ -91,6 +91,14 @@ impl MarkerConfig {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn with_statuses(&self, statuses: &[&str]) -> Self {
+        Self {
+            statuses: statuses.iter().map(|status| status.to_string()).collect(),
+            ..self.clone()
+        }
+    }
+
     /// Whether an agent in `status` gets its tab marked.
     pub(crate) fn marks(&self, status: &str) -> bool {
         self.statuses.iter().any(|marked| marked == status)

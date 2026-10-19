@@ -250,6 +250,18 @@ impl HerdrServer {
         }
     }
 
+    /// Adds a tab to the workspace and returns its ID and its pane's.
+    pub fn tab_in(&self, workspace: &str, label: &str) -> (String, String) {
+        let reply = self.herdr(&["tab", "create", "--workspace", workspace, "--label", label]);
+        let pane = &reply["result"]["root_pane"];
+        let id = |field: &str| pane[field].as_str().unwrap().to_string();
+        (id("tab_id"), id("pane_id"))
+    }
+
+    pub fn close_pane(&self, pane: &str) {
+        self.herdr_quiet(&["pane", "close", pane]);
+    }
+
     /// Adds a pane next to `pane`, in the same tab, and returns its ID.
     pub fn split(&self, pane: &str) -> String {
         let reply = self.herdr(&["pane", "split", pane, "--direction", "right"]);

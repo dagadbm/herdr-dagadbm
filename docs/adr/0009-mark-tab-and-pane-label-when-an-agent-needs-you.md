@@ -18,9 +18,10 @@ The marker is removed when the agent enters any other status, and when the user 
 
 - `[notify.tab_marker]`, `[notify.workspace_marker]` and `[notify.agent_marker]` each have `enabled`, `icon` and `statuses`, so they can differ.
 - The workspace is the one in the pane ID, read with `workspace get`. A notification names it without the marker, like the tab.
-- A workspace holds several agents, so any of them moving on, or any of its panes being focused, unmarks it.
+- A tab or workspace can hold several agents, so its marker stays while any agent in it needs you. Each pane holds a token (`marked_tab`, `marked_workspace`, reported with `--source dagadbm --token`) while its own agent does; Herdr keeps it and `pane list` returns it. The tab or workspace label is marked while any of its panes holds the token. The token comes off when that agent moves to another status or that pane is focused. Focusing another pane in the same tab or workspace changes nothing.
 - The default icon is the emoji `🟡`, not the text glyph `⚠`: an emoji keeps its own colour, while a text glyph takes the label's colour and got lost among Herdr's text. Plugins cannot colour label text. The agent name is the exception: a colour emoji looked out of place beside Herdr's plain agent text, so its default is the plain glyph `●`.
-- The marker is the only state. A label that starts with `icon ` is marked; nothing is stored. A tab the user renamed meanwhile is left alone.
+- The plugin stores no files for this. A label that starts with `icon ` is marked, and the pane tokens say which agents still need you. A tab the user renamed meanwhile is left alone.
+- If a marked pane is closed, its tab or workspace keeps the marker until the next status or focus event in it.
 - Removing the pane marker uses `--clear-display-agent`, so Herdr's own agent label returns.
 - Herdr's CLI needs the pane ID before the options.
 - A manual pane name hides the agent label on the border, so the pane marker has no effect there; the tab marker still works.

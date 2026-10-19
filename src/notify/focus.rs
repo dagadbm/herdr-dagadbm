@@ -189,6 +189,38 @@ fn workspace_label(pane_id: &str, herdr_bin: &str, deadline: Instant) -> Option<
     workspace_label_from_list_json(&json, workspace_of(pane_id))
 }
 
+/// A pane of `herdr pane list`: where it is and which marker tokens it holds.
+pub(crate) struct ListedPane {
+    pub(crate) pane_id: String,
+    pub(crate) tab_id: Option<String>,
+    tokens: BTreeMap<String, serde_json::Value>,
+}
+
+impl ListedPane {
+    pub(crate) fn has_token(&self, name: &str) -> bool {
+        self.tokens.contains_key(name)
+    }
+}
+
+/// Every pane Herdr lists, with its tokens. None when Herdr cannot answer by
+/// `deadline`.
+pub(crate) fn listed_panes(herdr_bin: &str, deadline: Instant) -> Option<Vec<ListedPane>> {
+    let json = command_stdout_until(herdr_bin, &["pane", "list"], &[], deadline)?;
+    let panes = herdr_result::<PaneListResult>(&json)?.panes;
+    Some(
+        panes
+            .into_iter()
+            .filter_map(|pane| {
+                Some(ListedPane {
+                    pane_id: pane.pane_id?,
+                    tab_id: pane.tab_id,
+                    tokens: pane.tokens,
+                })
+            })
+            .collect(),
+    )
+}
+
 /// The label of a workspace by its id. Best-effort, like `workspace_label`.
 pub(crate) fn workspace_label_by_id(
     workspace_id: &str,
