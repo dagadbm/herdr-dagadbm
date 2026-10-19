@@ -19,7 +19,7 @@ macOS notifications for agent panes that need you.
 - **Clickable notifications** when an agent is blocked or done. Clicking the notification, or its `Focus` button, focuses the pane in Herdr and brings the terminal that runs Herdr to the front.
 - **The right terminal tab**: in iTerm2, kitty, WezTerm and Ghostty, the click selects the tab or window that runs Herdr, not just the app.
 - **No noise when you are already there**: no notification when the pane is focused and its terminal is in front, and a pending notification goes away when you return to the pane.
-- **Markers**: an icon (default `🟡` on the tab and workspace labels, `●` on the agent name) in front of the tab label, the workspace label and the agent name while an agent needs you. They clear when the agent moves on or you focus the pane.
+- **Markers**: an icon (default `❕` on the tab label, `🟡` on the workspace label, `●` on the agent name) in front of the tab label, the workspace label and the agent name while an agent needs you. They clear when the agent moves on or you focus the pane.
 - **Configurable text**: title, subtitle, message, sound, timeout and which statuses notify, with per-status overrides and Herdr's own template tokens.
 - **Robust delivery**: a repeated agent status does not notify twice, and a notification that alerter closes when you click another one is posted again.
 
@@ -71,7 +71,7 @@ unknown = "·"
 
 [notify.tab_marker]       # icon in front of the tab label of agents that need you
 enabled = true
-icon = "🟡"
+icon = "❕"
 statuses = ["blocked", "done"]
 
 [notify.workspace_marker] # the same, in front of the workspace label

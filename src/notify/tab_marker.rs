@@ -260,6 +260,22 @@ fn unmarked_label<'a>(label: &'a str, icon: &str) -> Option<&'a str> {
 mod tests {
     use super::*;
 
+    fn tab_icon() -> String {
+        NotifyConfig::default().tab_marker.icon
+    }
+
+    fn ws_icon() -> String {
+        NotifyConfig::default().workspace_marker.icon
+    }
+
+    fn agent_icon() -> String {
+        NotifyConfig::default().agent_marker.icon
+    }
+
+    fn marked(icon: &str, label: &str) -> String {
+        format!("{icon} {label}")
+    }
+
     #[test]
     fn puts_the_icon_in_front_once() {
         assert_eq!(
@@ -483,23 +499,30 @@ mod tests {
                 "pane|report-metadata|w1:p2|--source|dagadbm|--token|marked_tab=1",
                 "pane|report-metadata|w1:p2|--source|dagadbm|--token|marked_workspace=1",
                 "tab|get|w1:t1",
-                "tab|rename|w1:t1|🟡 mobile zsh",
+                &format!("tab|rename|w1:t1|{}", marked(&tab_icon(), "mobile zsh")),
                 "workspace|get|w1",
-                "workspace|rename|w1|🟡 dotfiles",
-                "pane|report-metadata|w1:p2|--source|dagadbm|--display-agent|● claude",
+                &format!("workspace|rename|w1|{}", marked(&ws_icon(), "dotfiles")),
+                &format!(
+                    "pane|report-metadata|w1:p2|--source|dagadbm|--display-agent|{}",
+                    marked(&agent_icon(), "claude")
+                ),
             ]
         );
-        assert_eq!(herdr.label(), "🟡 mobile zsh");
-        assert_eq!(herdr.workspace_label(), "🟡 dotfiles");
+        assert_eq!(herdr.label(), marked(&tab_icon(), "mobile zsh"));
+        assert_eq!(herdr.workspace_label(), marked(&ws_icon(), "dotfiles"));
     }
 
     #[test]
     fn an_agent_back_at_work_gets_its_original_tab_label_and_agent_name_back() {
-        let herdr = TestHerdr::with_workspace("working", "🟡 mobile zsh", "🟡 dotfiles");
+        let herdr = TestHerdr::with_workspace(
+            "working",
+            &marked(&tab_icon(), "mobile zsh"),
+            &marked(&ws_icon(), "dotfiles"),
+        );
 
         sync_for_status(
             &NotifyConfig::default(),
-            &herdr.event("working", "● claude"),
+            &herdr.event("working", &marked(&agent_icon(), "claude")),
             &herdr.unfocused_in_tab(),
             &herdr.bin(),
             deadline(),
@@ -533,10 +556,10 @@ mod tests {
             &herdr.bin(),
             deadline(),
         );
-        assert_eq!(herdr.label(), "🟡   my tab 🟡 x");
+        assert_eq!(herdr.label(), format!("{}   my tab 🟡 x", tab_icon()));
         sync_for_status(
             &config,
-            &herdr.event("working", "● codex"),
+            &herdr.event("working", &marked(&agent_icon(), "codex")),
             &details,
             &herdr.bin(),
             deadline(),
@@ -547,7 +570,11 @@ mod tests {
 
     #[test]
     fn focusing_the_pane_clears_both_markers() {
-        let herdr = TestHerdr::with_workspace("focus", "🟡 3", "🟡 dotfiles");
+        let herdr = TestHerdr::with_workspace(
+            "focus",
+            &marked(&tab_icon(), "3"),
+            &marked(&ws_icon(), "dotfiles"),
+        );
 
         clear_for_focus(&NotifyConfig::default(), herdr.pane(), &herdr.bin());
 
@@ -568,7 +595,7 @@ mod tests {
 
     #[test]
     fn focusing_with_both_markers_off_calls_nothing() {
-        let herdr = TestHerdr::new("focus-off", "🟡 3");
+        let herdr = TestHerdr::new("focus-off", &marked(&tab_icon(), "3"));
         let mut config = NotifyConfig::default();
         config.tab_marker.enabled = false;
         config.agent_marker.enabled = false;
@@ -596,7 +623,10 @@ mod tests {
 
         assert_eq!(
             herdr.take_calls(),
-            ["pane|report-metadata|w1:p2|--source|dagadbm|--display-agent|● claude"]
+            [format!(
+                "pane|report-metadata|w1:p2|--source|dagadbm|--display-agent|{}",
+                marked(&agent_icon(), "claude")
+            )]
         );
     }
 
@@ -621,19 +651,28 @@ mod tests {
                 "pane|report-metadata|w1:p2|--source|dagadbm|--token|marked_tab=1",
                 "pane|report-metadata|w1:p2|--source|dagadbm|--token|marked_workspace=1",
                 "tab|get|w1:t1",
-                "tab|rename|w1:t1|🟡 mobile",
+                &format!("tab|rename|w1:t1|{}", marked(&tab_icon(), "mobile")),
                 "workspace|get|w1",
-                "workspace|rename|w1|🟡 dotfiles"
+                &format!("workspace|rename|w1|{}", marked(&ws_icon(), "dotfiles"))
             ]
         );
     }
 
-    const MARKED: (&str, &str) = ("🟡 mobile", "🟡 dotfiles");
+    fn marked_pair() -> (String, String) {
+        (
+            marked(&tab_icon(), "mobile"),
+            marked(&ws_icon(), "dotfiles"),
+        )
+    }
+
     const UNMARKED: (&str, &str) = ("mobile", "dotfiles");
 
-    fn assert_labels(herdr: &TestHerdr, expected: (&str, &str)) {
+    fn assert_labels(herdr: &TestHerdr, expected: (impl AsRef<str>, impl AsRef<str>)) {
         let (tab, workspace) = herdr.labels();
-        assert_eq!((tab.as_str(), workspace.as_str()), expected);
+        assert_eq!(
+            (tab.as_str(), workspace.as_str()),
+            (expected.0.as_ref(), expected.1.as_ref())
+        );
     }
 
     #[test]
@@ -642,10 +681,10 @@ mod tests {
         let other = herdr.second_pane();
         herdr.status(herdr.pane(), "blocked");
         herdr.status(&other, "blocked");
-        assert_labels(&herdr, MARKED);
+        assert_labels(&herdr, marked_pair());
 
         herdr.focus(herdr.pane());
-        assert_labels(&herdr, MARKED);
+        assert_labels(&herdr, marked_pair());
 
         herdr.focus(&other);
         assert_labels(&herdr, UNMARKED);
@@ -659,7 +698,7 @@ mod tests {
         herdr.status(&other, "blocked");
 
         herdr.status(herdr.pane(), "working");
-        assert_labels(&herdr, MARKED);
+        assert_labels(&herdr, marked_pair());
 
         herdr.status(&other, "working");
         assert_labels(&herdr, UNMARKED);
@@ -670,11 +709,11 @@ mod tests {
         let herdr = TestHerdr::new("never-marked", "mobile");
         let calm = herdr.second_pane();
         herdr.status(herdr.pane(), "blocked");
-        assert_labels(&herdr, MARKED);
+        assert_labels(&herdr, marked_pair());
 
         herdr.focus(&calm);
 
-        assert_labels(&herdr, MARKED);
+        assert_labels(&herdr, marked_pair());
     }
 
     #[test]
@@ -683,14 +722,14 @@ mod tests {
         let (other_tab, other) = herdr.other_tab();
         herdr.status(herdr.pane(), "blocked");
         herdr.status_in(&other, &other_tab, "blocked");
-        assert_eq!(herdr.label(), "🟡 mobile");
-        assert_eq!(herdr.tab_label_of(&other_tab), "🟡 other");
+        assert_eq!(herdr.label(), marked(&tab_icon(), "mobile"));
+        assert_eq!(herdr.tab_label_of(&other_tab), marked(&tab_icon(), "other"));
 
         herdr.focus(herdr.pane());
 
         assert_eq!(herdr.label(), "mobile");
-        assert_eq!(herdr.tab_label_of(&other_tab), "🟡 other");
-        assert_eq!(herdr.workspace_label(), "🟡 dotfiles");
+        assert_eq!(herdr.tab_label_of(&other_tab), marked(&tab_icon(), "other"));
+        assert_eq!(herdr.workspace_label(), marked(&ws_icon(), "dotfiles"));
 
         herdr.focus(&other);
 
@@ -708,8 +747,8 @@ mod tests {
         herdr.status(herdr.pane(), "working");
 
         assert_eq!(herdr.label(), "mobile");
-        assert_eq!(herdr.tab_label_of(&other_tab), "🟡 other");
-        assert_eq!(herdr.workspace_label(), "🟡 dotfiles");
+        assert_eq!(herdr.tab_label_of(&other_tab), marked(&tab_icon(), "other"));
+        assert_eq!(herdr.workspace_label(), marked(&ws_icon(), "dotfiles"));
     }
 
     #[test]
@@ -722,8 +761,8 @@ mod tests {
         herdr.focus(herdr.pane());
 
         assert_labels(&herdr, UNMARKED);
-        assert_eq!(away.label(), "🟡 elsewhere");
-        assert_eq!(away.workspace_label(), "🟡 dotfiles");
+        assert_eq!(away.label(), marked(&tab_icon(), "elsewhere"));
+        assert_eq!(away.workspace_label(), marked(&ws_icon(), "dotfiles"));
     }
 
     #[test]
@@ -731,7 +770,7 @@ mod tests {
         let herdr = TestHerdr::new("closed", "mobile");
         let calm = herdr.second_pane();
         herdr.status(herdr.pane(), "blocked");
-        assert_labels(&herdr, MARKED);
+        assert_labels(&herdr, marked_pair());
 
         crate::test_herdr::HerdrServer::shared().close_pane(herdr.pane());
         herdr.status(&calm, "working");
@@ -748,7 +787,7 @@ mod tests {
 
         herdr.status(herdr.pane(), "done");
 
-        assert_labels(&herdr, MARKED);
+        assert_labels(&herdr, marked_pair());
     }
 
     #[test]
@@ -760,10 +799,10 @@ mod tests {
         let tab = &herdr.workspace.tab_id;
 
         herdr.status_with(&config, herdr.pane(), tab, "done");
-        assert_labels(&herdr, ("mobile", "🟡 dotfiles"));
+        assert_labels(&herdr, ("mobile", &marked(&ws_icon(), "dotfiles")));
 
         herdr.status_with(&config, herdr.pane(), tab, "blocked");
-        assert_labels(&herdr, ("🟡 mobile", "dotfiles"));
+        assert_labels(&herdr, (&marked(&tab_icon(), "mobile"), "dotfiles"));
 
         herdr.status_with(&config, herdr.pane(), tab, "working");
         assert_labels(&herdr, UNMARKED);
@@ -862,19 +901,26 @@ mod tests {
                 "pane|list",
                 "pane|report-metadata|w1:p2|--source|dagadbm|--token|marked_workspace=1",
                 "workspace|get|w1",
-                "workspace|rename|w1|🟡 dotfiles",
-                "pane|report-metadata|w1:p2|--source|dagadbm|--display-agent|● claude"
+                &format!("workspace|rename|w1|{}", marked(&ws_icon(), "dotfiles")),
+                &format!(
+                    "pane|report-metadata|w1:p2|--source|dagadbm|--display-agent|{}",
+                    marked(&agent_icon(), "claude")
+                )
             ]
         );
     }
 
     #[test]
     fn an_already_marked_tab_and_agent_are_not_marked_again() {
-        let herdr = TestHerdr::with_workspace("already", "🟡 mobile", "🟡 dotfiles");
+        let herdr = TestHerdr::with_workspace(
+            "already",
+            &marked(&tab_icon(), "mobile"),
+            &marked(&ws_icon(), "dotfiles"),
+        );
 
         let original = sync_for_status(
             &NotifyConfig::default(),
-            &herdr.event("blocked", "● claude"),
+            &herdr.event("blocked", &marked(&agent_icon(), "claude")),
             &herdr.unfocused_in_tab(),
             &herdr.bin(),
             deadline(),
@@ -895,8 +941,8 @@ mod tests {
                 "workspace|get|w1"
             ]
         );
-        assert_eq!(herdr.label(), "🟡 mobile");
-        assert_eq!(herdr.workspace_label(), "🟡 dotfiles");
+        assert_eq!(herdr.label(), marked(&tab_icon(), "mobile"));
+        assert_eq!(herdr.workspace_label(), marked(&ws_icon(), "dotfiles"));
     }
 
     #[test]

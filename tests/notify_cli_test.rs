@@ -22,6 +22,37 @@ mod support;
 #[cfg(unix)]
 use support::herdr_server::{HerdrServer, Workspace};
 
+/// The default icon of the `[notify.<section>]` marker, read from the example config.
+#[cfg(unix)]
+fn default_icon(section: &str) -> String {
+    let config: toml::Table = include_str!("../config.example.toml").parse().unwrap();
+    config["notify"][section]["icon"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+#[cfg(unix)]
+fn tab_icon() -> String {
+    default_icon("tab_marker")
+}
+
+#[cfg(unix)]
+fn workspace_icon() -> String {
+    default_icon("workspace_marker")
+}
+
+#[cfg(unix)]
+fn agent_icon() -> String {
+    default_icon("agent_marker")
+}
+
+/// `label` with `icon` in front, as a marker puts it.
+#[cfg(unix)]
+fn marked(icon: &str, label: &str) -> String {
+    format!("{icon} {label}")
+}
+
 /// The alerter group of a pane's notification.
 #[cfg(unix)]
 fn group(pane: &str) -> String {
@@ -128,7 +159,12 @@ fn focus_event_removes_notification_for_foreground_terminal() {
         "--state",
         "blocked",
     ]);
-    herdr.herdr(&["tab", "rename", &workspace.tab_id, "🟡 work"]);
+    herdr.herdr(&[
+        "tab",
+        "rename",
+        &workspace.tab_id,
+        &marked(&tab_icon(), "work"),
+    ]);
 
     write_fixed_frontmost(&temp_dir, "com.example.terminal");
 
@@ -703,8 +739,11 @@ fn an_agent_notifies_for_its_own_pane_only_when_another_workspace_is_focused() {
     let notified = wait_for_notifier_output(&notifier_log);
     assert!(notified.contains(&group(&away.pane_id)), "{notified}");
     assert!(!notified.contains(&group(&seen.pane_id)), "{notified}");
-    assert_eq!(herdr.workspace_label(&away.workspace_id), "🟡 away");
-    assert_eq!(herdr.tab_label(&away.tab_id), "🟡 away");
+    assert_eq!(
+        herdr.workspace_label(&away.workspace_id),
+        marked(&workspace_icon(), "away")
+    );
+    assert_eq!(herdr.tab_label(&away.tab_id), marked(&tab_icon(), "away"));
     assert_eq!(herdr.workspace_label(&seen.workspace_id), "seen");
     assert_eq!(herdr.tab_label(&seen.tab_id), "seen");
 
@@ -1343,17 +1382,18 @@ fn blocked_agent_marks_tab_and_agent_name_and_working_or_focus_restores_them() {
         "pane.agent_status_changed",
         status_event("blocked", "claude"),
     );
-    assert_eq!(herdr.tab_label(tab), "🟡 status");
+    assert_eq!(herdr.tab_label(tab), marked(&tab_icon(), "status"));
     assert!(
         log.contains(&format!(
-            "pane report-metadata {pane} --source dagadbm --display-agent ● claude\n"
+            "pane report-metadata {pane} --source dagadbm --display-agent {} claude\n",
+            agent_icon()
         )),
         "{log}"
     );
 
     let log = run(
         "pane.agent_status_changed",
-        status_event("working", "● claude"),
+        status_event("working", &marked(&agent_icon(), "claude")),
     );
     assert_eq!(herdr.tab_label(tab), "status");
     assert!(
@@ -1363,7 +1403,7 @@ fn blocked_agent_marks_tab_and_agent_name_and_working_or_focus_restores_them() {
         "{log}"
     );
 
-    herdr.rename_tab(tab, "🟡 status");
+    herdr.rename_tab(tab, &marked(&tab_icon(), "status"));
     run("pane.focused", focused_event(pane));
     assert_eq!(herdr.tab_label(tab), "status");
 
@@ -1437,17 +1477,20 @@ fn a_repeated_agent_status_notifies_once_and_leaves_herdr_alone() {
     };
 
     let log = run(&p2, "blocked", "claude", true);
-    assert!(log.contains("--display-agent ● claude\n"), "{log}");
+    assert!(
+        log.contains(&format!("--display-agent {} claude\n", agent_icon())),
+        "{log}"
+    );
 
     // The echo of the agent marker: same status, marked agent name.
-    let log = run(&p2, "blocked", "● claude", false);
+    let log = run(&p2, "blocked", &marked(&agent_icon(), "claude"), false);
     assert_eq!(log, "", "a repeat must not call Herdr");
 
     // Another pane keeps its own last status.
     run(&p3, "blocked", "claude", true);
 
     // A real change, and a return to blocked, each notify again.
-    run(&p2, "working", "● claude", false);
+    run(&p2, "working", &marked(&agent_icon(), "claude"), false);
     run(&p2, "blocked", "claude", true);
 
     // Give a wrongly sent extra notification time to show up.
@@ -1757,7 +1800,7 @@ fn the_title_names_the_tab_as_it_was_before_the_marker() {
     // The marker renamed the tab before the notification was rendered.
     assert_eq!(
         session.herdr.tab_label(&session.workspace.tab_id),
-        "🟡 status"
+        marked(&tab_icon(), "status")
     );
     let post = &session.posts()[0];
     assert!(post.starts_with("--title=⌂ repo ▸ status|"), "{post}");
