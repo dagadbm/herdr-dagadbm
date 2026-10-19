@@ -40,7 +40,7 @@ unknown = "·"
 # An empty icon turns a marker off.
 [notify.tab_marker]
 enabled = true
-icon = "❕"
+icon = "●"
 statuses = ["blocked", "done"]
 
 [notify.agent_marker]

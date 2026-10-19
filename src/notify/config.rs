@@ -19,7 +19,7 @@ pub(crate) const DEFAULT_TITLE: &str = "⌂ {workspace} ▸ {tab}";
 pub(crate) const DEFAULT_SUBTITLE: &str = "";
 pub(crate) const DEFAULT_MESSAGE: &str = "{state_icon} {terminal_title_stripped}";
 pub(crate) const DEFAULT_MARKER_ICON: &str = "🟡";
-pub(crate) const DEFAULT_TAB_MARKER_ICON: &str = "❕";
+pub(crate) const DEFAULT_TAB_MARKER_ICON: &str = "●";
 /// The agent name is drawn in the label's own colour, where a colour emoji looks out of place.
 pub(crate) const DEFAULT_AGENT_MARKER_ICON: &str = "●";
 pub(crate) const DEFAULT_MARKER_STATUSES: &[&str] = &["blocked", "done"];
@@ -319,7 +319,7 @@ mod tests {
         let marker = parse("").unwrap().tab_marker;
 
         assert!(marker.enabled);
-        assert_eq!(marker.icon, "❕");
+        assert_eq!(marker.icon, "●");
         assert!(marker.marks("blocked"));
         assert!(marker.marks("done"));
         assert!(!marker.marks("working"));
