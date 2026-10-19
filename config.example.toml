@@ -34,17 +34,23 @@ idle = "○"
 unknown = "·"
 
 # Marks agents that need you by putting `icon` in front of the tab's label
-# (tab_marker) and in front of the agent name on the pane (agent_marker). The
+# (tab_marker), in front of the agent name on the pane (agent_marker) and in
+# front of the workspace's label (workspace_marker). The
 # icon comes off when the agent moves to another status or you focus the pane.
 # An empty icon turns a marker off.
 [notify.tab_marker]
 enabled = true
-icon = "⚠"
+icon = "🟡"
 statuses = ["blocked", "done"]
 
 [notify.agent_marker]
 enabled = true
-icon = "⚠"
+icon = "🟡"
+statuses = ["blocked", "done"]
+
+[notify.workspace_marker]
+enabled = true
+icon = "🟡"
 statuses = ["blocked", "done"]
 
 # Per-status overrides take precedence over the keys above, for example:

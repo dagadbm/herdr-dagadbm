@@ -185,10 +185,10 @@ An alerter sound name (empty plays nothing) and the seconds before an unclicked 
 - Herdr: none; alerter's `--sound` and `--timeout`.
 
 ### Marker
-An icon and a space put in front of a label to show that an agent needs the user. The tab marker changes the tab label; the agent marker changes the display agent. Each has `enabled`, `icon` and `statuses` (ADR 9). An empty icon turns it off.
-- Code: `MarkerConfig`, `MarkerSection`, `marks`, `tab_marker`, `agent_marker`, `DEFAULT_MARKER_ICON`, `sync_for_status`, `clear_for_focus`, `marked_label`, `unmarked_label`
+An icon and a space put in front of a label to show that an agent needs the user. The tab marker changes the tab label, the workspace marker the workspace label, and the agent marker the display agent. Each has `enabled`, `icon` and `statuses` (ADR 9). An empty icon turns it off.
+- Code: `MarkerConfig`, `MarkerSection`, `marks`, `tab_marker`, `workspace_marker`, `agent_marker`, `OriginalLabels`, `DEFAULT_MARKER_ICON`, `sync_for_status`, `clear_for_focus`, `marked_label`, `unmarked_label`
 - File: `src/notify/config.rs`, `src/notify/tab_marker.rs`
-- Herdr: tab `label` (`herdr tab rename`) and `display_agent`.
+- Herdr: tab and workspace `label` (`herdr tab rename`, `herdr workspace rename`) and `display_agent`.
 
 ### Example config
 The commented file that lists every key with its default. It is embedded in the binary and written by `--init-config` when no config exists.

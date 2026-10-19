@@ -18,7 +18,7 @@ pub(crate) const DEFAULT_STATUSES: &[&str] = &["blocked", "done"];
 pub(crate) const DEFAULT_TITLE: &str = "⌂ {workspace} ▸ {tab}";
 pub(crate) const DEFAULT_SUBTITLE: &str = "";
 pub(crate) const DEFAULT_MESSAGE: &str = "{state_icon} {terminal_title_stripped}";
-pub(crate) const DEFAULT_MARKER_ICON: &str = "⚠";
+pub(crate) const DEFAULT_MARKER_ICON: &str = "🟡";
 pub(crate) const DEFAULT_MARKER_STATUSES: &[&str] = &["blocked", "done"];
 
 /// The commented config `notify-init-config` writes. It spells out every
@@ -45,6 +45,8 @@ struct NotifySection {
     tab_marker: MarkerSection,
     #[serde(default)]
     agent_marker: MarkerSection,
+    #[serde(default)]
+    workspace_marker: MarkerSection,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -118,6 +120,7 @@ pub(crate) struct NotifyConfig {
     state_icons: BTreeMap<String, String>,
     pub(crate) tab_marker: MarkerConfig,
     pub(crate) agent_marker: MarkerConfig,
+    pub(crate) workspace_marker: MarkerConfig,
     /// An alerter sound name; None plays no sound.
     pub(crate) sound: Option<String>,
     /// Seconds before an unclicked notification is dismissed; 0 keeps it.
@@ -154,6 +157,7 @@ impl NotifyConfig {
                 .collect(),
             tab_marker: MarkerConfig::from_section(section.tab_marker),
             agent_marker: MarkerConfig::from_section(section.agent_marker),
+            workspace_marker: MarkerConfig::from_section(section.workspace_marker),
         }
     }
 
@@ -298,11 +302,12 @@ mod tests {
         let marker = parse("").unwrap().tab_marker;
 
         assert!(marker.enabled);
-        assert_eq!(marker.icon, "⚠");
+        assert_eq!(marker.icon, "🟡");
         assert!(marker.marks("blocked"));
         assert!(marker.marks("done"));
         assert!(!marker.marks("working"));
         assert_eq!(parse("").unwrap().agent_marker, marker);
+        assert_eq!(parse("").unwrap().workspace_marker, marker);
     }
 
     #[test]
@@ -401,5 +406,6 @@ mod tests {
         assert_eq!(config.timeout_secs, defaults.timeout_secs);
         assert_eq!(config.tab_marker, defaults.tab_marker);
         assert_eq!(config.agent_marker, defaults.agent_marker);
+        assert_eq!(config.workspace_marker, defaults.workspace_marker);
     }
 }

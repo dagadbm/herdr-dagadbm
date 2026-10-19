@@ -12,11 +12,14 @@ A notification can be missed. Herdr has no API to style a pane or tab border (CL
 
 ## Decision
 
-The `notify` feature also changes text that Herdr already draws. When an agent enters a status in `statuses` (default `blocked` and `done`), it puts `icon` (default `⚠`) and a space in front of the tab label (`herdr tab rename`) and in front of the pane's display agent (`herdr pane report-metadata <pane> --source dagadbm --display-agent`).
+The `notify` feature also changes text that Herdr already draws. When an agent enters a status in `statuses` (default `blocked` and `done`), it puts `icon` (default `🟡`) and a space in front of the tab label (`herdr tab rename`), in front of the workspace label (`herdr workspace rename`) and in front of the pane's display agent (`herdr pane report-metadata <pane> --source dagadbm --display-agent`).
 
 The marker is removed when the agent enters any other status, and when the user focuses the pane. A focused pane is never marked.
 
-- `[notify.tab_marker]` and `[notify.agent_marker]` each have `enabled`, `icon` and `statuses`, so the tab and the agent name can differ.
+- `[notify.tab_marker]`, `[notify.workspace_marker]` and `[notify.agent_marker]` each have `enabled`, `icon` and `statuses`, so they can differ.
+- The workspace is the one in the pane ID, read with `workspace get`. A notification names it without the marker, like the tab.
+- A workspace holds several agents, so any of them moving on, or any of its panes being focused, unmarks it.
+- The default icon is the emoji `🟡`, not the text glyph `⚠`: an emoji keeps its own colour, while a text glyph takes the label's colour and got lost among Herdr's text. Plugins cannot colour label text.
 - The marker is the only state. A label that starts with `icon ` is marked; nothing is stored. A tab the user renamed meanwhile is left alone.
 - Removing the pane marker uses `--clear-display-agent`, so Herdr's own agent label returns.
 - Herdr's CLI needs the pane ID before the options.

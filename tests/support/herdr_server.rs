@@ -278,6 +278,18 @@ impl HerdrServer {
         self.herdr(&["tab", "rename", tab, label]);
     }
 
+    pub fn rename_workspace(&self, workspace: &str, label: &str) {
+        self.herdr(&["workspace", "rename", workspace, label]);
+    }
+
+    pub fn workspace_label(&self, workspace: &str) -> String {
+        let reply = self.herdr(&["workspace", "get", workspace]);
+        reply["result"]["workspace"]["label"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
+
     pub fn tab_label(&self, tab: &str) -> String {
         let reply = self.herdr(&["tab", "get", tab]);
         reply["result"]["tab"]["label"]

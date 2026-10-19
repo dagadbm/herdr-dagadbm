@@ -44,6 +44,7 @@ use state::{
     cleanup_stale_state_files, clear_terminal_bindings, mark_notification_cleared,
     prune_stale_workspace_bindings, record_status, reset_notification_clearance,
 };
+use tab_marker::OriginalLabels;
 use timings::Timings;
 
 pub(crate) fn run<I, S>(args: I) -> Result<(), String>
@@ -128,7 +129,7 @@ fn notify(test_mode: bool, timings: Timings) -> Result<(), String> {
     let deadline = Instant::now() + timings.lookup_budget;
     let details = pane_details(&event.pane_id, &herdr_bin, deadline).unwrap_or_default();
 
-    let Some((decision, tab_label)) =
+    let Some((decision, original)) =
         screen(test_mode, &config, &event, &details, &herdr_bin, deadline)
     else {
         return Ok(());
@@ -138,7 +139,14 @@ fn notify(test_mode: bool, timings: Timings) -> Result<(), String> {
     // notifier fails without paying for them.
     let notifier_bin = resolve_notifier_bin()?;
 
-    let labels = pane_labels(&event.pane_id, details, tab_label, &herdr_bin, deadline);
+    let labels = pane_labels(
+        &event.pane_id,
+        details,
+        original.tab,
+        original.workspace,
+        &herdr_bin,
+        deadline,
+    );
     let notification = compose(&config, &event, labels);
     deliver(
         notification,
@@ -190,7 +198,7 @@ fn next_event(
     Ok(Some(event))
 }
 
-/// How to send the notification and the tab label read for it, or `None` when
+/// How to send the notification and the labels read for it, or `None` when
 /// it is suppressed.
 fn screen(
     test_mode: bool,
@@ -199,12 +207,12 @@ fn screen(
     details: &PaneDetails,
     herdr_bin: &str,
     deadline: Instant,
-) -> Option<(NotificationDecision, Option<String>)> {
-    // The tab label is read before the marker changes it, so the
-    // notification names the tab rather than the marker.
-    let mut tab_label = None;
+) -> Option<(NotificationDecision, OriginalLabels)> {
+    // The labels are read before the markers change them, so the
+    // notification names the tab and workspace rather than the markers.
+    let mut original = OriginalLabels::default();
     if !test_mode {
-        tab_label = tab_marker::sync_for_status(config, event, details, herdr_bin, deadline);
+        original = tab_marker::sync_for_status(config, event, details, herdr_bin, deadline);
         if !config.status_is_enabled(&event.status) {
             return None;
         }
@@ -213,9 +221,9 @@ fn screen(
     match notification_decision(&event.pane_id, details.focused) {
         // --test validates the pipeline end to end, so it never suppresses the
         // notification; it just goes without the visibility monitor.
-        NotificationDecision::Skip if test_mode => Some((NotificationDecision::Send, tab_label)),
+        NotificationDecision::Skip if test_mode => Some((NotificationDecision::Send, original)),
         NotificationDecision::Skip => None,
-        decision => Some((decision, tab_label)),
+        decision => Some((decision, original)),
     }
 }
 

@@ -57,7 +57,7 @@ All code of `notify` lives in `src/notify/`. The source files that changed most 
 | `src/notify/notifier.rs` | Finds alerter and talks to it directly. | `resolve_notifier_bin`, `send_notification`, `remove_notification`, `shown_groups` |
 | `src/notify/executable.rs` | Finds the `herdr` binary and executables in general. | `resolve_herdr_bin`, `find_executable` |
 | `src/notify/icons.rs` | Maps an agent name to a bundled icon and writes it to disk for alerter. | `agent_icon_path`, `AGENT_ICONS`, `icon_for_agent` |
-| `src/notify/tab_marker.rs` | Marks and unmarks the tab label and the pane's display agent (ADR 9). | `sync_for_status`, `clear_for_focus`, `SOURCE` |
+| `src/notify/tab_marker.rs` | Marks and unmarks the tab label, the workspace label and the pane's display agent (ADR 9). | `sync_for_status`, `clear_for_focus`, `SOURCE` |
 | `src/notify/terminal/mod.rs` | Brings the terminal tab that runs Herdr forward before activation (ADR 11). | `TerminalAdapter`, `FocusCommand`, `ADAPTERS`, `raise_client_container` |
 | `src/notify/terminal/client.rs` | Finds the Herdr clients of the session and reads their environment and directory. | `HerdrClient`, `herdr_clients`, `last_input`, `process_environment` |
 | `src/notify/terminal/iterm2.rs`, `kitty.rs`, `wezterm.rs`, `ghostty.rs` | One adapter per terminal. | `Iterm2`, `Kitty`, `Wezterm`, `Ghostty` |
@@ -105,11 +105,13 @@ flowchart LR
   notify --> notify_executable
   notify --> notify_focus
   notify --> notify_ledger
+  notify --> notify_notification
   notify --> notify_notifier
   notify --> notify_outcome
   notify --> notify_script
   notify --> notify_state
   notify --> notify_tab_marker
+  notify --> notify_timings
   notify --> notify_util
   notify_cli --> notify_timings
   notify_event --> notify_config
@@ -210,7 +212,7 @@ sequenceDiagram
     B->>B: status_event_from_json() (no pane: exit)
     B->>S: record_status() (same status as last time: exit)
     B->>HC: agent get pane (pane_details, deadline starts)
-    B->>HC: tab get, tab rename, pane report-metadata (tab_marker::sync_for_status)
+    B->>HC: tab get, tab rename, workspace get, workspace rename, pane report-metadata (tab_marker::sync_for_status)
     B->>B: status_is_enabled() (status not in notify_on: exit)
     alt pane focused
         B->>S: remembered_terminal()
@@ -294,7 +296,7 @@ sequenceDiagram
     participant A as alerter
     H->>B: env HERDR_PLUGIN_EVENT=pane.focused, HERDR_PLUGIN_EVENT_JSON
     B->>B: focused_pane_id_from_event_json()
-    B->>HC: agent get, tab get, tab rename, pane report-metadata --clear-display-agent (tab_marker::clear_for_focus)
+    B->>HC: agent get, tab get, tab rename, workspace get, workspace rename, pane report-metadata --clear-display-agent (tab_marker::clear_for_focus)
     B->>L: front, info (frontmost_bundle_id)
     B->>S: learn_terminal_from_frontmost() writes terminal memory unless a click caused the focus
     opt frontmost app is the terminal bound to the workspace
@@ -364,7 +366,7 @@ State outside the state directory:
 
 - **Alerter group** `herdr-dagadbm-notify-<pane>` (`notification_group_id` in `src/notify/util.rs`). One per pane, so a new notification replaces the pane's old one on screen.
 - **Plugin config** `$HERDR_PLUGIN_CONFIG_DIR/config.toml` (`config_path` in `src/notify/config.rs`, ADR 4). Read on every call. Written only by `init_config`.
-- **Herdr tab labels** carry the tab marker, and **the pane's display agent**, reported with `--source dagadbm` (`SOURCE` in `src/notify/tab_marker.rs`), carries the agent marker (ADR 9). The marker text is the only record of the mark.
+- **Herdr tab and workspace labels** carry the tab and workspace markers, and **the pane's display agent**, reported with `--source dagadbm` (`SOURCE` in `src/notify/tab_marker.rs`), carries the agent marker (ADR 9). The marker text is the only record of the mark.
 
 Files with names from before ADR 13 (`herdr-<pane>.*`, `focus-<hash>.sh`, `focus-origin-<workspace>.marker`, the `icons` folder) are deleted, and the old `terminal-memory.json` is renamed, by `remove_legacy_state_in` in `src/notify/state.rs`.
 
@@ -376,7 +378,7 @@ Every external call is made through `std::process::Command` or a Unix socket. Te
 
 | Tool | How it is found | Calls | Bounded | Code |
 | --- | --- | --- | --- | --- |
-| `herdr` CLI | `HERDR_BIN_PATH` (an error if set but not executable, even before any event is read), else `PATH`, `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, else the bare name. This order differs from alerter's, and no ADR explains it. | `agent get`, `tab get`, `tab rename`, `workspace list`, `worktree list --cwd`, `pane report-metadata` | Yes, `command_stdout_until` | `resolve_herdr_bin` in `src/notify/executable.rs`; `pane_details`, `pane_labels`, `tab_label` in `src/notify/focus.rs`; `src/notify/tab_marker.rs` |
+| `herdr` CLI | `HERDR_BIN_PATH` (an error if set but not executable, even before any event is read), else `PATH`, `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, else the bare name. This order differs from alerter's, and no ADR explains it. | `agent get`, `tab get`, `tab rename`, `workspace get`, `workspace rename`, `workspace list`, `worktree list --cwd`, `pane report-metadata` | Yes, `command_stdout_until` | `resolve_herdr_bin` in `src/notify/executable.rs`; `pane_details`, `pane_labels`, `tab_label` in `src/notify/focus.rs`; `src/notify/tab_marker.rs` |
 | `herdr` CLI | as above | `pane list` | No, `command_stdout` | `focused_pane_id`, `live_workspace_ids` in `src/notify/focus.rs` |
 | Herdr socket | `HERDR_SOCKET_PATH` | One JSON line, method `pane.focus`, id `dagadbm:focus` | 5 s read timeout | `focus_pane_via_socket` in `src/notify/focus.rs` |
 | `alerter` | `PATH`, then `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin` (ADR 3) | Post (from the script), `--remove <group>`, `--list ALL` | No | `resolve_notifier_bin`, `remove_notification`, `shown_groups` in `src/notify/notifier.rs`; `alerter_focus_script` in `src/notify/script.rs` |
@@ -405,8 +407,8 @@ Each rule below says what must hold, why, and where it is enforced. Break one on
 8. **One `agent get` serves both the skip decision and the text, and the skip comes before the text lookups.** Why: a suppressed notification must not pay for the other lookups (comment in `run`, `src/notify/mod.rs`).
 9. **Lookups are best-effort.** An unanswered `agent get` counts as an unfocused pane, so the notification is sent. An unanswered label renders as an empty token (`PaneDetails` in `src/notify/focus.rs`, `PaneLabels` in `src/notify/notification.rs`).
 10. **Herdr's reply must be about the pane that was asked about.** Why: a stale snapshot would name another pane on a notification that focuses this one (`pane_details_from_get_json` in `src/notify/focus.rs`).
-11. **The tab label is read before the marker changes it, and the notification shows it without the marker.** (`sync_for_status` in `src/notify/tab_marker.rs` returns the unmarked label, which `run` passes to `pane_labels`.)
-12. **Markers store nothing.** A label that starts with the icon and a space is marked. A focused pane is never marked. A tab the user renamed is left alone (ADR 9, `marked_label` and `unmarked_label` in `src/notify/tab_marker.rs`).
+11. **The tab and workspace labels are read before the markers change them, and the notification shows them without the marker.** (`sync_for_status` in `src/notify/tab_marker.rs` returns them as `OriginalLabels`, which `run` passes to `pane_labels`.)
+12. **Markers store nothing.** A label that starts with the icon and a space is marked. A focused pane is never marked. A tab or workspace the user renamed is left alone (ADR 9, `marked_label` and `unmarked_label` in `src/notify/tab_marker.rs`).
 13. **A report from an old posting changes nothing.** Why: a script can outlive its posting when a newer notification replaces it (ADR 12, `resolve_in` in `src/notify/ledger.rs` compares `post_id`).
 14. **A click stamps the click marker before it reports, and a close waits `CLOSE_SETTLE` before it reads the marker. A close that cannot be told apart counts as the user's.** Why: alerter 26.5 closes another notification on a click, and only timing tells the two apart (ADR 12, `alerter_focus_script` in `src/notify/script.rs`, `closed` in `src/notify/outcome.rs`).
 15. **A posting is re-posted at most once.** Why: two clicks at the same time must not show it twice (ADR 12). The claim file is created with `create_new` in `claim_repost_in` in `src/notify/ledger.rs`.
@@ -431,7 +433,7 @@ Each rule below says what must hold, why, and where it is enforced. Break one on
 | When a notification is skipped | `notification_decision` in `src/notify/focus.rs` | |
 | alerter arguments or the script | `alerter_focus_script` in `src/notify/script.rs` | Existing scripts keep the old text until rewritten. |
 | What a click, close or timeout does | `src/notify/outcome.rs`, `src/notify/ledger.rs` | ADR 12 |
-| Tab and agent markers | `src/notify/tab_marker.rs`, `MarkerConfig` in `src/notify/config.rs` | ADR 9 |
+| Tab, workspace and agent markers | `src/notify/tab_marker.rs`, `MarkerConfig` in `src/notify/config.rs` | ADR 9 |
 | Terminal tab selection on click | `src/notify/terminal/` | [dev-guidelines.md](dev-guidelines.md#add-a-terminal-adapter) |
 | Agent icons | `AGENT_ICONS` in `src/notify/icons.rs` and `src/notify/assets/icons/agents/` | Update `NOTICE.md` for the license. |
 | A state file name or its retention | The owning module and `retention_for` in `src/notify/state.rs` | Rename old files in `remove_legacy_state_in` (ADR 13). |

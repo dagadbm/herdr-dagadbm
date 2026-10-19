@@ -60,6 +60,11 @@ struct TabInfo {
 }
 
 #[derive(Debug, Deserialize)]
+struct WorkspaceGetResult {
+    workspace: Option<WorkspaceInfo>,
+}
+
+#[derive(Debug, Deserialize)]
 struct WorkspaceListResult {
     workspaces: Vec<WorkspaceInfo>,
 }
@@ -135,15 +140,17 @@ pub(crate) fn pane_details(
 
 /// The workspace, the tab, the terminal title, and the git state a notification
 /// names about its pane, for a notification that is going to be shown.
-/// `known_tab` is a tab label the caller already read, which saves the lookup.
+/// `known_tab` and `known_workspace` are labels the caller already read, which
+/// saves the lookups.
 pub(crate) fn pane_labels(
     pane_id: &str,
     details: PaneDetails,
     known_tab: Option<String>,
+    known_workspace: Option<String>,
     herdr_bin: &str,
     deadline: Instant,
 ) -> PaneLabels {
-    let workspace = workspace_label(pane_id, herdr_bin, deadline);
+    let workspace = known_workspace.or_else(|| workspace_label(pane_id, herdr_bin, deadline));
     let tab = known_tab.or_else(|| {
         details
             .tab_id
@@ -180,6 +187,21 @@ pub(crate) fn pane_labels(
 fn workspace_label(pane_id: &str, herdr_bin: &str, deadline: Instant) -> Option<String> {
     let json = command_stdout_until(herdr_bin, &["workspace", "list"], &[], deadline)?;
     workspace_label_from_list_json(&json, workspace_of(pane_id))
+}
+
+/// The label of a workspace by its id. Best-effort, like `workspace_label`.
+pub(crate) fn workspace_label_by_id(
+    workspace_id: &str,
+    herdr_bin: &str,
+    deadline: Instant,
+) -> Option<String> {
+    let json = command_stdout_until(
+        herdr_bin,
+        &["workspace", "get", workspace_id],
+        &[],
+        deadline,
+    )?;
+    herdr_result::<WorkspaceGetResult>(&json)?.workspace?.label
 }
 
 /// The label of the tab that holds the pane; an unnamed tab is known by its
