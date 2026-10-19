@@ -31,6 +31,35 @@ pub(crate) struct TokenValues {
     pub(crate) metadata: BTreeMap<String, String>,
 }
 
+/// Renders the `{token}` at the start of `rest` and returns what follows it.
+fn render_token<'a>(rest: &'a str, values: &TokenValues, output: &mut String) -> &'a str {
+    match rest[1..].find('}') {
+        Some(end) if TOKENS.contains(&&rest[1..=end]) => {
+            if let Some(value) = values.builtins.get(&rest[1..=end]) {
+                output.push_str(value);
+            }
+            &rest[end + 2..]
+        }
+        _ => {
+            output.push('{');
+            &rest[1..]
+        }
+    }
+}
+
+/// Renders the `$name` at the start of `rest` and returns what follows it.
+fn render_metadata<'a>(rest: &'a str, values: &TokenValues, output: &mut String) -> &'a str {
+    let name_len = rest[1..]
+        .find(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+        .unwrap_or(rest.len() - 1);
+    if name_len == 0 {
+        output.push('$');
+    } else if let Some(value) = values.metadata.get(&rest[1..=name_len]) {
+        output.push_str(value);
+    }
+    &rest[1 + name_len..]
+}
+
 pub(crate) fn render(template: &str, values: &TokenValues) -> String {
     let mut output = String::with_capacity(template.len());
     let mut rest = template;
@@ -45,29 +74,8 @@ pub(crate) fn render(template: &str, values: &TokenValues) -> String {
                 output.push('}');
                 rest = &rest[2..];
             }
-            '{' => match rest[1..].find('}') {
-                Some(end) if TOKENS.contains(&&rest[1..=end]) => {
-                    if let Some(value) = values.builtins.get(&rest[1..=end]) {
-                        output.push_str(value);
-                    }
-                    rest = &rest[end + 2..];
-                }
-                _ => {
-                    output.push('{');
-                    rest = &rest[1..];
-                }
-            },
-            '$' => {
-                let name_len = rest[1..]
-                    .find(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
-                    .unwrap_or(rest.len() - 1);
-                if name_len == 0 {
-                    output.push('$');
-                } else if let Some(value) = values.metadata.get(&rest[1..=name_len]) {
-                    output.push_str(value);
-                }
-                rest = &rest[1 + name_len..];
-            }
+            '{' => rest = render_token(rest, values, &mut output),
+            '$' => rest = render_metadata(rest, values, &mut output),
             _ => {
                 output.push(ch);
                 rest = &rest[ch.len_utf8()..];

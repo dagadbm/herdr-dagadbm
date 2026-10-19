@@ -52,9 +52,11 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
 {
-    let (action, timings) = parse_cli_args(args)?;
+    parse_cli_args(args).and_then(|(action, timings)| dispatch(action, timings))
+}
 
-    match action {
+fn dispatch(action: CliAction, timings: Timings) -> Result<(), String> {
+    match action.clone() {
         CliAction::Help => {
             print_usage();
             Ok(())
@@ -63,14 +65,24 @@ where
         CliAction::Cleanup => cleanup(),
         CliAction::ClearTerminalBindings => clear_bindings(),
         CliAction::FocusPane(pane_id) => focus::focus_pane(&pane_id, &timings),
-        CliAction::NotificationEnded(how, pane_id, post_id) => match how {
-            Outcome::Clicked => outcome::clicked(&pane_id, &post_id, &timings),
-            Outcome::Closed => outcome::closed(&pane_id, &post_id, &timings),
-            Outcome::Ended => outcome::ended(&pane_id, &post_id),
-        },
+        CliAction::NotificationEnded(how, pane_id, post_id) => {
+            notification_ended(how, &pane_id, &post_id, &timings)
+        }
         CliAction::CheckPaneVisibility(pane_id) => check_pane_visibility(&pane_id, &timings),
-        CliAction::Event => notify(false, timings),
-        CliAction::Test => notify(true, timings),
+        CliAction::Event | CliAction::Test => notify(action == CliAction::Test, timings),
+    }
+}
+
+fn notification_ended(
+    how: Outcome,
+    pane_id: &str,
+    post_id: &str,
+    timings: &Timings,
+) -> Result<(), String> {
+    match how {
+        Outcome::Clicked => outcome::clicked(pane_id, post_id, timings),
+        Outcome::Closed => outcome::closed(pane_id, post_id, timings),
+        Outcome::Ended => outcome::ended(pane_id, post_id),
     }
 }
 
@@ -84,23 +96,24 @@ fn init_config() -> Result<(), String> {
     Ok(())
 }
 
+fn rewrite_focus_scripts() -> Result<(), String> {
+    rewrite_generated_scripts_without_activation()
+        .map_err(|err| format!("failed to update generated focus scripts: {err}"))
+}
+
 fn cleanup() -> Result<(), String> {
     cleanup_stale_state_files()
-        .map_err(|err| format!("failed to clean stale state files: {err}"))?;
-    rewrite_generated_scripts_without_activation()
-        .map_err(|err| format!("failed to update generated focus scripts: {err}"))?;
+        .map_err(|err| format!("failed to clean stale state files: {err}"))
+        .and_then(|()| rewrite_focus_scripts())?;
     // Terminal bindings for workspaces that no longer exist are stale
     // too; best-effort, since Herdr may not be reachable.
-    if let Ok(herdr_bin) = resolve_herdr_bin() {
-        let _ = prune_stale_workspace_bindings(&herdr_bin);
-    }
+    let _ = resolve_herdr_bin().map(|herdr_bin| prune_stale_workspace_bindings(&herdr_bin));
     Ok(())
 }
 
 fn clear_bindings() -> Result<(), String> {
     clear_terminal_bindings().map_err(|err| format!("failed to clear terminal bindings: {err}"))?;
-    rewrite_generated_scripts_without_activation()
-        .map_err(|err| format!("failed to update generated focus scripts: {err}"))
+    rewrite_focus_scripts()
 }
 
 fn check_pane_visibility(pane_id: &str, timings: &Timings) -> Result<(), String> {

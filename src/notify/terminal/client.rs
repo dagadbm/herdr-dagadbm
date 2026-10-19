@@ -145,8 +145,14 @@ fn cwd_from_lsof(output: &str) -> Option<String> {
 }
 
 fn controlling_tty(pid: u32) -> Option<String> {
-    let tty = command_stdout("ps", &["-o", "tty=", "-p", &pid.to_string()])?;
-    let tty = tty.trim();
+    parse_tty(&command_stdout(
+        "ps",
+        &["-o", "tty=", "-p", &pid.to_string()],
+    )?)
+}
+
+fn parse_tty(output: &str) -> Option<String> {
+    let tty = output.trim();
     (!tty.is_empty() && !tty.starts_with('?')).then(|| tty.to_string())
 }
 
@@ -245,6 +251,13 @@ fn environment_from_procargs(buffer: &[u8]) -> Option<Vec<(String, String)>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_controlling_tty_is_its_trimmed_name() {
+        assert_eq!(parse_tty("ttys003\n"), Some("ttys003".to_string()));
+        assert_eq!(parse_tty("??\n"), None);
+        assert_eq!(parse_tty("  \n"), None);
+    }
 
     const CLIENT_SOCKET: &str = "/Users/me/.config/herdr/herdr-client.sock";
 

@@ -51,7 +51,18 @@ pub(crate) fn command_stdout_until(
         .spawn()
         .ok()?;
 
-    let mut pipe = child.stdout.take()?;
+    let pipe = child.stdout.take()?;
+    let stdout = wait_for_stdout(&mut child, spawn_reader(pipe), deadline);
+
+    // Whatever the outcome, nothing the child started may outlive the call:
+    // a descendant left running would keep working in the pane's repository.
+    kill_process_group(&mut child);
+    String::from_utf8(stdout?).ok()
+}
+
+type ReadResult = std::io::Result<Vec<u8>>;
+
+fn spawn_reader(mut pipe: impl Read + Send + 'static) -> mpsc::Receiver<ReadResult> {
     let (sender, receiver) = mpsc::channel();
     // Detached on purpose: a descendant that escaped the process group can hold
     // the pipe past the deadline, and the reader is then abandoned rather than
@@ -61,37 +72,49 @@ pub(crate) fn command_stdout_until(
         let read = pipe.read_to_end(&mut buffer);
         let _ = sender.send(read.map(|_| buffer));
     });
+    receiver
+}
 
+/// Waits up to `wait` for the reader: Some(Some(result)) once it has finished,
+/// Some(None) when it is still reading, None when it is gone.
+fn poll_reader(
+    receiver: &mpsc::Receiver<ReadResult>,
+    wait: Duration,
+) -> Option<Option<ReadResult>> {
+    match receiver.recv_timeout(wait) {
+        Ok(result) => Some(Some(result)),
+        Err(mpsc::RecvTimeoutError::Timeout) => Some(None),
+        Err(mpsc::RecvTimeoutError::Disconnected) => None,
+    }
+}
+
+/// The output of a child that exited successfully before `deadline`.
+fn wait_for_stdout(
+    child: &mut Child,
+    receiver: mpsc::Receiver<ReadResult>,
+    deadline: Instant,
+) -> Option<Vec<u8>> {
     // Waiting on the reader rather than sleeping: a command closes its stdout
     // as it exits, so a quick one is noticed at once instead of a poll later.
     let remaining = || deadline.saturating_duration_since(Instant::now());
     // Some once the reader has seen the end of the output.
     let mut read = None;
-    let stdout = loop {
+    loop {
         match child.try_wait() {
             Ok(Some(status)) if status.success() => {
-                break read
+                return read
                     .or_else(|| receiver.recv_timeout(remaining()).ok())
                     .and_then(Result::ok);
             }
             Ok(None) if Instant::now() < deadline => match read {
                 // The output has ended, so the exit is a moment away.
                 Some(_) => std::thread::sleep(Duration::from_millis(1)),
-                None => match receiver.recv_timeout(TIMEOUT_POLL.min(remaining())) {
-                    Ok(result) => read = Some(result),
-                    Err(mpsc::RecvTimeoutError::Timeout) => {}
-                    Err(mpsc::RecvTimeoutError::Disconnected) => break None,
-                },
+                None => read = poll_reader(&receiver, TIMEOUT_POLL.min(remaining()))?,
             },
             // Failed, past the deadline, or the wait itself failed.
-            _ => break None,
+            _ => return None,
         }
-    };
-
-    // Whatever the outcome, nothing the child started may outlive the call:
-    // a descendant left running would keep working in the pane's repository.
-    kill_process_group(&mut child);
-    String::from_utf8(stdout?).ok()
+    }
 }
 
 /// Kills the process group `child` leads, then reaps the child. Each step is

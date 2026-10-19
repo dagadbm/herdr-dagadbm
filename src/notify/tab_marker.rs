@@ -76,36 +76,71 @@ pub(crate) fn sync_for_status(
         deadline,
     );
 
-    let mut original = OriginalLabels::default();
-    if let (true, Some(tab_id)) = (tab.enabled, details.tab_id()) {
-        let mark = wants_tab
-            || marked_elsewhere(&panes, &event.pane_id, TAB_TOKEN, |pane| {
-                pane.tab_id.as_deref() == Some(tab_id)
-            });
-        original.tab = tab_label(tab_id, herdr_bin, deadline).map(|label| {
-            sync_label(&label, tab, mark, |new| {
-                rename(tab_id, new, herdr_bin, deadline)
-            })
-        });
-    }
-    if let (true, Some(workspace_id)) =
-        (workspace.enabled, workspace_id_from_pane_id(&event.pane_id))
-    {
-        let mark = wants_workspace
-            || marked_elsewhere(&panes, &event.pane_id, WORKSPACE_TOKEN, |pane| {
-                workspace_id_from_pane_id(&pane.pane_id) == Some(workspace_id)
-            });
-        original.workspace =
-            workspace_label_by_id(workspace_id, herdr_bin, deadline).map(|label| {
-                sync_label(&label, workspace, mark, |new| {
-                    rename_workspace(workspace_id, new, herdr_bin, deadline)
-                })
-            });
-    }
+    let original = OriginalLabels {
+        tab: sync_tab_label(tab, details, &panes, event, wants_tab, herdr_bin, deadline),
+        workspace: sync_workspace_label(
+            workspace,
+            &panes,
+            event,
+            wants_workspace,
+            herdr_bin,
+            deadline,
+        ),
+    };
+    sync_agent_name(&config.agent_marker, event, looked_at, herdr_bin, deadline);
+    original
+}
 
-    let agent_marker = &config.agent_marker;
+fn sync_tab_label(
+    tab: &MarkerConfig,
+    details: &PaneDetails,
+    panes: &[ListedPane],
+    event: &StatusEvent,
+    wants_tab: bool,
+    herdr_bin: &str,
+    deadline: Instant,
+) -> Option<String> {
+    let tab_id = details.tab_id().filter(|_| tab.enabled)?;
+    let mark = wants_tab
+        || marked_elsewhere(panes, &event.pane_id, TAB_TOKEN, |pane| {
+            pane.tab_id.as_deref() == Some(tab_id)
+        });
+    tab_label(tab_id, herdr_bin, deadline).map(|label| {
+        sync_label(&label, tab, mark, |new| {
+            rename(tab_id, new, herdr_bin, deadline)
+        })
+    })
+}
+
+fn sync_workspace_label(
+    workspace: &MarkerConfig,
+    panes: &[ListedPane],
+    event: &StatusEvent,
+    wants_workspace: bool,
+    herdr_bin: &str,
+    deadline: Instant,
+) -> Option<String> {
+    let workspace_id = workspace_id_from_pane_id(&event.pane_id).filter(|_| workspace.enabled)?;
+    let mark = wants_workspace
+        || marked_elsewhere(panes, &event.pane_id, WORKSPACE_TOKEN, |pane| {
+            workspace_id_from_pane_id(&pane.pane_id) == Some(workspace_id)
+        });
+    workspace_label_by_id(workspace_id, herdr_bin, deadline).map(|label| {
+        sync_label(&label, workspace, mark, |new| {
+            rename_workspace(workspace_id, new, herdr_bin, deadline)
+        })
+    })
+}
+
+fn sync_agent_name(
+    agent_marker: &MarkerConfig,
+    event: &StatusEvent,
+    looked_at: bool,
+    herdr_bin: &str,
+    deadline: Instant,
+) {
     if !agent_marker.enabled {
-        return original;
+        return;
     }
     let agent = event.agent.as_deref().unwrap_or_default();
     if agent_marker.marks(&event.status) && !looked_at {
@@ -126,7 +161,6 @@ pub(crate) fn sync_for_status(
             deadline,
         );
     }
-    original
 }
 
 /// Puts the marker on `label`, or takes it off, through `rename`, and returns

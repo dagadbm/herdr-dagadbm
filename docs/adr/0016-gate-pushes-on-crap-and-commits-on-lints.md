@@ -14,7 +14,7 @@ Clippy's `cognitive_complexity` lint caps nesting-heavy functions, but it ignore
 
 - `scripts/pre-commit.sh` runs `cargo fmt --check` and `cargo clippy --all-targets`. The pre-commit hook calls it.
 - `scripts/pre-push.sh` runs fmt, clippy, the tests under `cargo llvm-cov` (saving `target/lcov.info`), then `cargo crap --fail-above`. The pre-push hook calls it. It stands alone and does not call `pre-commit.sh`.
-- The threshold is 30 (`.cargo-crap.toml`). Fix a failure by splitting the function or testing it, not by raising the threshold.
+- The threshold is 10 (`.cargo-crap.toml`). Fix a failure by splitting the function or testing it, not by raising the threshold.
 - The hook files in `.cargo-husky/hooks/` only run the matching script. A CI job calls the same scripts.
 
 ## Consequences

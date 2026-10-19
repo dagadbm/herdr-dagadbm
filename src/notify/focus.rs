@@ -410,11 +410,15 @@ fn focus_pane_via_socket(
                 format!("failed to read pane focus response: {err}")
             }
         })?;
+    check_focus_response(&response_line, pane_id)
+}
+
+fn check_focus_response(response_line: &str, pane_id: &str) -> Result<(), String> {
     if response_line.is_empty() {
         return Err("Herdr closed the socket without a pane focus response".to_string());
     }
 
-    let response: serde_json::Value = serde_json::from_str(&response_line)
+    let response: serde_json::Value = serde_json::from_str(response_line)
         .map_err(|err| format!("invalid pane focus response: {err}"))?;
     if response.get("id").and_then(serde_json::Value::as_str) != Some("dagadbm:focus") {
         return Err("pane focus response has an unexpected request id".to_string());

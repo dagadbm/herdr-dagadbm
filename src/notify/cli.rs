@@ -35,58 +35,82 @@ where
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         let arg = arg.as_ref();
-        match arg {
-            "--integration-tests" => timings = Timings::integration_tests(),
-            "--test" => set_action(&mut action, CliAction::Test, arg)?,
-            "-h" | "--help" => set_action(&mut action, CliAction::Help, arg)?,
-            "--init-config" => set_action(&mut action, CliAction::InitConfig, arg)?,
-            "--cleanup" => set_action(&mut action, CliAction::Cleanup, arg)?,
-            "--clear-terminal-bindings" => {
-                set_action(&mut action, CliAction::ClearTerminalBindings, arg)?
-            }
-            "--check-pane-visibility" | "--focus-pane" => {
-                if action != CliAction::Event {
-                    return Err(format!("cannot combine {arg} with another command"));
-                }
-                let pane_id = args
-                    .next()
-                    .ok_or_else(|| format!("missing pane ID after {arg}"))?;
-                action = if arg == "--focus-pane" {
-                    CliAction::FocusPane(pane_id.as_ref().to_string())
-                } else {
-                    CliAction::CheckPaneVisibility(pane_id.as_ref().to_string())
-                };
-            }
-            "--notification-clicked" | "--notification-closed" | "--notification-ended" => {
-                if action != CliAction::Event {
-                    return Err(format!("cannot combine {arg} with another command"));
-                }
-                let outcome = match arg {
-                    "--notification-clicked" => Outcome::Clicked,
-                    "--notification-closed" => Outcome::Closed,
-                    _ => Outcome::Ended,
-                };
-                let pane_id = args
-                    .next()
-                    .ok_or_else(|| format!("missing pane ID after {arg}"))?;
-                let post_id = args
-                    .next()
-                    .ok_or_else(|| format!("missing posting ID after {arg}"))?;
-                action = CliAction::NotificationEnded(
-                    outcome,
-                    pane_id.as_ref().to_string(),
-                    post_id.as_ref().to_string(),
-                );
-            }
-            _ => {
-                return Err(format!(
-                    "unknown argument: {arg}; run `dagadbm notify --help` for usage"
-                ));
-            }
+        if arg == "--integration-tests" {
+            timings = Timings::integration_tests();
+        } else if let Some(simple) = simple_action(arg) {
+            set_action(&mut action, simple, arg)?;
+        } else if let Some(parsed) = parse_with_values(arg, &mut args) {
+            set_action(&mut action, parsed?, arg)?;
+        } else {
+            return Err(format!(
+                "unknown argument: {arg}; run `dagadbm notify --help` for usage"
+            ));
         }
     }
 
     Ok((action, timings))
+}
+
+fn simple_action(arg: &str) -> Option<CliAction> {
+    match arg {
+        "--test" => Some(CliAction::Test),
+        "-h" | "--help" => Some(CliAction::Help),
+        "--init-config" => Some(CliAction::InitConfig),
+        "--cleanup" => Some(CliAction::Cleanup),
+        "--clear-terminal-bindings" => Some(CliAction::ClearTerminalBindings),
+        _ => None,
+    }
+}
+
+fn next_value<S: AsRef<str>>(
+    args: &mut impl Iterator<Item = S>,
+    what: &str,
+    arg: &str,
+) -> Result<String, String> {
+    args.next()
+        .map(|value| value.as_ref().to_string())
+        .ok_or_else(|| format!("missing {what} after {arg}"))
+}
+
+/// The action for a flag that takes its pane (and posting) from the arguments
+/// after it, or None when `arg` is not such a flag.
+fn parse_with_values<S: AsRef<str>>(
+    arg: &str,
+    args: &mut impl Iterator<Item = S>,
+) -> Option<Result<CliAction, String>> {
+    match arg {
+        "--check-pane-visibility" | "--focus-pane" => Some(parse_pane_command(arg, args)),
+        "--notification-clicked" | "--notification-closed" | "--notification-ended" => {
+            Some(parse_notification_ended(arg, args))
+        }
+        _ => None,
+    }
+}
+
+fn parse_pane_command<S: AsRef<str>>(
+    arg: &str,
+    args: &mut impl Iterator<Item = S>,
+) -> Result<CliAction, String> {
+    let pane_id = next_value(args, "pane ID", arg)?;
+    Ok(if arg == "--focus-pane" {
+        CliAction::FocusPane(pane_id)
+    } else {
+        CliAction::CheckPaneVisibility(pane_id)
+    })
+}
+
+fn parse_notification_ended<S: AsRef<str>>(
+    arg: &str,
+    args: &mut impl Iterator<Item = S>,
+) -> Result<CliAction, String> {
+    let outcome = match arg {
+        "--notification-clicked" => Outcome::Clicked,
+        "--notification-closed" => Outcome::Closed,
+        _ => Outcome::Ended,
+    };
+    let pane_id = next_value(args, "pane ID", arg)?;
+    let post_id = next_value(args, "posting ID", arg)?;
+    Ok(CliAction::NotificationEnded(outcome, pane_id, post_id))
 }
 
 fn set_action(action: &mut CliAction, next: CliAction, arg: &str) -> Result<(), String> {

@@ -92,20 +92,23 @@ fn is_focus_origin_marker(name: &str) -> bool {
         && name.ends_with(".marker")
 }
 
-fn clear_focus_origin_markers() -> io::Result<()> {
-    let state_dir = plugin_state_dir();
-    let entries = match fs::read_dir(&state_dir) {
-        Ok(entries) => entries,
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(err) => return Err(err),
-    };
+/// The entries of `dir`, or none when it does not exist yet.
+fn read_dir_or_empty(dir: &Path) -> io::Result<Vec<fs::DirEntry>> {
+    match fs::read_dir(dir) {
+        Ok(entries) => entries.collect(),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(err) => Err(err),
+    }
+}
 
-    for entry in entries {
-        let path = entry?.path();
-        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-            continue;
-        };
-        if is_focus_origin_marker(name) && path.is_file() {
+fn clear_focus_origin_markers() -> io::Result<()> {
+    for entry in read_dir_or_empty(&plugin_state_dir())? {
+        let path = entry.path();
+        let is_marker = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(is_focus_origin_marker);
+        if is_marker && path.is_file() {
             fs::remove_file(path)?;
         }
     }
@@ -274,13 +277,8 @@ fn retention_for(
         Some(script_retention)
     } else if is_focus_origin_marker(name) {
         Some(focus_origin_retention)
-    } else if !name.starts_with(PREFIX) && !crate::notify::ledger::is_ledger_file(name) {
-        None
-    } else if name.contains(".result.")
-        || name.contains(".status.")
-        || name.ends_with(".cleared")
-        || name.ends_with(".last-status")
-        || crate::notify::ledger::is_ledger_file(name)
+    } else if crate::notify::ledger::is_ledger_file(name)
+        || (name.starts_with(PREFIX) && is_transient_state_file(name))
     {
         Some(temp_file_retention)
     } else {
@@ -288,89 +286,109 @@ fn retention_for(
     }
 }
 
+fn is_transient_state_file(name: &str) -> bool {
+    name.contains(".result.")
+        || name.contains(".status.")
+        || name.ends_with(".cleared")
+        || name.ends_with(".last-status")
+}
+
 /// Whether `name` is a state file from before every name started with the
 /// sub-plugin name (ADR 13): `herdr-<pane>.*`, `focus-<hash>.sh`,
 /// `.focus-<hash>.<pid>.tmp`, `focus-origin-<ws>.marker` and the terminal
 /// memory with its temp file.
 fn is_legacy_state_file(name: &str) -> bool {
-    let is_hex = |value: &str| value.len() == 16 && value.bytes().all(|b| b.is_ascii_hexdigit());
-    let is_digits = |value: &str| !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit());
+    is_legacy_pane_file(name)
+        || is_legacy_ledger_temp(name)
+        || is_legacy_focus_script(name)
+        || is_legacy_focus_temp(name)
+        || (name.starts_with("focus-origin-") && name.ends_with(".marker"))
+        || is_legacy_memory_temp(name)
+}
 
-    if let Some(rest) = name.strip_prefix("herdr-") {
-        if name.starts_with(PREFIX) {
-            return false;
-        }
-        return rest.ends_with(".cleared")
+fn is_hex_hash(value: &str) -> bool {
+    value.len() == 16 && value.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn is_digits(value: &str) -> bool {
+    !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit())
+}
+
+fn is_legacy_pane_file(name: &str) -> bool {
+    let Some(rest) = name.strip_prefix("herdr-") else {
+        return false;
+    };
+    !name.starts_with(PREFIX)
+        && (rest.ends_with(".cleared")
             || rest.ends_with(".last-status")
             || rest.ends_with(".notification.json")
             || rest.ends_with(".repost")
             || rest.contains(".result.")
-            || rest.contains(".status.");
-    }
-    if let Some(rest) = name.strip_prefix(".herdr-") {
-        // The ledger's temp record of an old group.
-        return !rest.starts_with(&PREFIX["herdr-".len()..])
+            || rest.contains(".status."))
+}
+
+/// The ledger's temp record of an old group.
+fn is_legacy_ledger_temp(name: &str) -> bool {
+    name.strip_prefix(".herdr-").is_some_and(|rest| {
+        !rest.starts_with(&PREFIX["herdr-".len()..])
             && rest.contains(".notification.json.")
-            && rest.ends_with(".tmp");
-    }
-    if let Some(hash) = name
-        .strip_prefix("focus-")
+            && rest.ends_with(".tmp")
+    })
+}
+
+fn is_legacy_focus_script(name: &str) -> bool {
+    name.strip_prefix("focus-")
         .and_then(|rest| rest.strip_suffix(".sh"))
-    {
-        return is_hex(hash);
-    }
-    if let Some((hash, pid)) = name
-        .strip_prefix(".focus-")
+        .is_some_and(is_hex_hash)
+}
+
+fn is_legacy_focus_temp(name: &str) -> bool {
+    name.strip_prefix(".focus-")
         .and_then(|rest| rest.strip_suffix(".tmp"))
         .and_then(|rest| rest.split_once('.'))
-    {
-        return is_hex(hash) && is_digits(pid);
-    }
-    if name.starts_with("focus-origin-") && name.ends_with(".marker") {
-        return true;
-    }
-    if let Some(pid) = name
-        .strip_prefix(".terminal-memory-")
+        .is_some_and(|(hash, pid)| is_hex_hash(hash) && is_digits(pid))
+}
+
+fn is_legacy_memory_temp(name: &str) -> bool {
+    name.strip_prefix(".terminal-memory-")
         .and_then(|rest| rest.strip_suffix(".tmp"))
-    {
-        return is_digits(pid);
-    }
-    false
+        .is_some_and(is_digits)
 }
 
 /// Moves state from the names used before ADR 13 out of the way: the terminal
 /// memory is renamed so bindings survive, the icons folder is removed (icons
 /// are rewritten on demand) and every other old file is deleted.
 fn remove_legacy_state_in(state_dir: &Path) -> io::Result<()> {
-    let old_memory = state_dir.join("terminal-memory.json");
-    if old_memory.is_file() {
-        let new_memory = state_dir.join(terminal_memory_name());
-        if new_memory.exists() {
-            fs::remove_file(&old_memory)?;
-        } else {
-            fs::rename(&old_memory, new_memory)?;
-        }
-    }
+    migrate_legacy_memory(state_dir)?;
     let old_icons = state_dir.join("icons");
     if old_icons.is_dir() {
         fs::remove_dir_all(old_icons)?;
     }
 
-    let entries = match fs::read_dir(state_dir) {
-        Ok(entries) => entries,
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(err) => return Err(err),
-    };
-    for entry in entries.flatten() {
+    for entry in read_dir_or_empty(state_dir)? {
         let path = entry.path();
-        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-            continue;
-        };
-        if is_legacy_state_file(name) && path.is_file() {
+        let is_legacy = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(is_legacy_state_file);
+        if is_legacy && path.is_file() {
             let _ = fs::remove_file(&path);
         }
     }
     Ok(())
+}
+
+fn migrate_legacy_memory(state_dir: &Path) -> io::Result<()> {
+    let old_memory = state_dir.join("terminal-memory.json");
+    if !old_memory.is_file() {
+        return Ok(());
+    }
+    let new_memory = state_dir.join(terminal_memory_name());
+    if new_memory.exists() {
+        fs::remove_file(&old_memory)
+    } else {
+        fs::rename(&old_memory, new_memory)
+    }
 }
 
 fn cleanup_stale_state_files_in(
@@ -380,39 +398,23 @@ fn cleanup_stale_state_files_in(
     temp_file_retention: Duration,
     focus_origin_retention: Duration,
 ) -> io::Result<()> {
-    let entries = match fs::read_dir(state_dir) {
-        Ok(entries) => entries,
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(err) => return Err(err),
-    };
-
-    for entry in entries {
-        let entry = entry?;
+    for entry in read_dir_or_empty(state_dir)? {
         let path = entry.path();
-        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        let Some(retention) = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| {
+                retention_for(
+                    name,
+                    script_retention,
+                    temp_file_retention,
+                    focus_origin_retention,
+                )
+            })
+        else {
             continue;
         };
-
-        let Some(retention) = retention_for(
-            name,
-            script_retention,
-            temp_file_retention,
-            focus_origin_retention,
-        ) else {
-            continue;
-        };
-        if !path.is_file() {
-            continue;
-        }
-
-        let is_stale = entry
-            .metadata()
-            .and_then(|metadata| metadata.modified())
-            .ok()
-            .and_then(|modified| now.duration_since(modified).ok())
-            .is_some_and(|age| age >= retention);
-
-        if is_stale {
+        if path.is_file() && is_older_than(&entry, now, retention) {
             match fs::remove_file(&path) {
                 Ok(()) => {}
                 Err(err) if err.kind() == io::ErrorKind::NotFound => {}
@@ -422,6 +424,15 @@ fn cleanup_stale_state_files_in(
     }
 
     Ok(())
+}
+
+fn is_older_than(entry: &fs::DirEntry, now: SystemTime, retention: Duration) -> bool {
+    entry
+        .metadata()
+        .and_then(|metadata| metadata.modified())
+        .ok()
+        .and_then(|modified| now.duration_since(modified).ok())
+        .is_some_and(|age| age >= retention)
 }
 
 #[cfg(test)]
