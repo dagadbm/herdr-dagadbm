@@ -47,7 +47,7 @@ impl Timings {
         Self {
             click_window: Duration::from_millis(500),
             close_settle: Duration::from_millis(100),
-            lookup_budget: Duration::from_secs(1),
+            lookup_budget: Duration::from_secs(3),
             focus_socket_timeout: Duration::from_millis(500),
             monitor_poll: Duration::from_millis(200),
             integration_tests: true,

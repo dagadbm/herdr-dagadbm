@@ -1667,6 +1667,24 @@ fi
         fs::rename(temp, self.dir.join(format!("answer-{group}"))).unwrap();
     }
 
+    /// A click on `clicked` that closes `closed` too, as alerter 26.5 does.
+    /// The close is reported only once the click has left its marker. Both
+    /// answers written together race: the close script can read the marker
+    /// before the click script touched it and take the close for a dismissal.
+    /// That window is what `a_close_reported_just_before_the_click_marker_lands_stays_pending`
+    /// covers; here it would only make the test depend on machine load.
+    fn click_then_close(&self, clicked: &str, closed: &str) {
+        self.answer(clicked, "Focus");
+        for _ in 0..1000 {
+            if self.click_marker().exists() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(self.click_marker().exists(), "the click left no marker");
+        self.answer(closed, "@CLOSED");
+    }
+
     /// Every notification posted so far, in order.
     fn posts(&self) -> Vec<String> {
         fs::read_to_string(self.dir.join("notifier.log"))
@@ -1832,8 +1850,7 @@ fn a_click_reposts_the_notification_it_closed_silently_and_unchanged() {
 
     // The click on p2 closes p3 too, as alerter 26.5 does.
     let clicked = std::time::Instant::now();
-    session.answer("w1:p2", "Focus");
-    session.answer("w1:p3", "@CLOSED");
+    session.click_then_close("w1:p2", "w1:p3");
     session.wait_for_posts(4);
 
     assert!(
@@ -2069,8 +2086,7 @@ fn assert_click_does_not_repost(block: impl FnOnce(&Session, &str)) {
     let post_id = session.post_id("w1:p3");
     block(&session, &post_id);
 
-    session.answer("w1:p2", "Focus");
-    session.answer("w1:p3", "@CLOSED");
+    session.click_then_close("w1:p2", "w1:p3");
     wait_for_detached_notifier(&session.state_dir());
     std::thread::sleep(std::time::Duration::from_millis(300));
 

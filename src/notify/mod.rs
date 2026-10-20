@@ -140,11 +140,16 @@ fn notify(test_mode: bool, timings: Timings) -> Result<(), String> {
     // suppressed notification must not pay for them. An unanswered lookup
     // counts as unfocused, so the notification is sent.
     let deadline = Instant::now() + timings.lookup_budget;
-    let details = pane_details(&event.pane_id, &herdr_bin, deadline).unwrap_or_default();
+    let mut details = pane_details(&event.pane_id, &herdr_bin, deadline).unwrap_or_default();
 
-    let Some((decision, original)) =
-        screen(test_mode, &config, &event, &details, &herdr_bin, deadline)
-    else {
+    let Some((decision, original)) = screen(
+        test_mode,
+        &config,
+        &event,
+        &mut details,
+        &herdr_bin,
+        deadline,
+    ) else {
         return Ok(());
     };
 
@@ -217,10 +222,16 @@ fn screen(
     test_mode: bool,
     config: &config::NotifyConfig,
     event: &StatusEvent,
-    details: &PaneDetails,
+    details: &mut PaneDetails,
     herdr_bin: &str,
     deadline: Instant,
 ) -> Option<(NotificationDecision, OriginalLabels)> {
+    // Herdr calls a pane focused even when another app (a video overlay) is
+    // frontmost. Only a skipped notification means the user is really looking
+    // at it, so that, not Herdr's flag, decides whether the markers apply.
+    let decision = notification_decision(&event.pane_id, details.focused);
+    details.focused = decision == NotificationDecision::Skip;
+
     // The labels are read before the markers change them, so the
     // notification names the tab and workspace rather than the markers.
     let mut original = OriginalLabels::default();
@@ -231,7 +242,7 @@ fn screen(
         }
     }
 
-    match notification_decision(&event.pane_id, details.focused) {
+    match decision {
         // --test validates the pipeline end to end, so it never suppresses the
         // notification; it just goes without the visibility monitor.
         NotificationDecision::Skip if test_mode => Some((NotificationDecision::Send, original)),
