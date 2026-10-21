@@ -120,7 +120,25 @@ fn check_pane_visibility(pane_id: &str, timings: &Timings) -> Result<(), String>
     let herdr_bin = resolve_herdr_bin()?;
     let deadline = Instant::now() + timings.lookup_budget;
     let details = pane_details(pane_id, &herdr_bin, deadline).unwrap_or_default();
-    if notification_decision(pane_id, details.focused) == NotificationDecision::Skip {
+    visibility_verdict(
+        notification_decision(pane_id, details.focused),
+        &config::load(),
+        pane_id,
+        &herdr_bin,
+    )
+}
+
+/// Ok when the user can see the pane. Herdr sends no `pane.focused` event when
+/// the user returns to a pane it already calls focused (another terminal tab
+/// or app was in front), so this is the moment its markers must come off.
+fn visibility_verdict(
+    decision: NotificationDecision,
+    config: &config::NotifyConfig,
+    pane_id: &str,
+    herdr_bin: &str,
+) -> Result<(), String> {
+    if decision == NotificationDecision::Skip {
+        tab_marker::clear_for_focus(config, pane_id, herdr_bin);
         return Ok(());
     }
     Err("pane is not visible in its workspace's bound terminal".to_string())
@@ -337,4 +355,31 @@ fn handle_pane_focused(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_pane_that_becomes_visible_loses_its_markers() {
+        let server = crate::test_herdr::HerdrServer::shared();
+        let workspace = server.workspace();
+        server.rename_tab(&workspace.tab_id, "● 3");
+        server.report_agent(&workspace.pane_id, "claude", "blocked");
+        let dir = std::env::temp_dir().join(format!("dagadbm-visible-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let herdr_bin = server.recording_herdr(&dir, &dir.join("log"));
+
+        let verdict = visibility_verdict(
+            NotificationDecision::Skip,
+            &config::NotifyConfig::default(),
+            &workspace.pane_id,
+            herdr_bin.to_str().unwrap(),
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert_eq!(verdict, Ok(()));
+        assert_eq!(server.tab_label(&workspace.tab_id), "3");
+    }
 }

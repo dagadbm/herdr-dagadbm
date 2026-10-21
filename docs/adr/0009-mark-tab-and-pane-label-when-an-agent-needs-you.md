@@ -16,6 +16,8 @@ The `notify` feature also changes text that Herdr already draws. When an agent e
 
 The marker is removed when the agent enters any other status, and when the user focuses the pane. A focused pane is never marked.
 
+Herdr sends no `pane.focused` event when the user returns to a pane it already calls focused (for example from another terminal tab). The notification's visibility monitor catches that return, so when it finds the pane visible it removes the markers as a focus would (`visibility_verdict` in `src/notify/mod.rs`). It runs only while the notification is alive.
+
 - `[notify.tab_marker]`, `[notify.workspace_marker]` and `[notify.agent_marker]` each have `enabled`, `icon` and `statuses`, so they can differ.
 - The workspace is the one in the pane ID, read with `workspace get`. A notification names it without the marker, like the tab.
 - A tab or workspace can hold several agents, so its marker stays while any agent in it needs you. Each pane holds a token (`marked_tab`, `marked_workspace`, reported with `--source dagadbm --token`) while its own agent does; Herdr keeps it and `pane list` returns it. The tab or workspace label is marked while any of its panes holds the token. The token comes off when that agent moves to another status or that pane is focused. Focusing another pane in the same tab or workspace changes nothing.
