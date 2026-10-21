@@ -39,7 +39,7 @@ herdr plugin unlink dagadbm              # before going back to the installed pl
 
 # Release: the installed plugin comes from GitHub.
 git push origin main
-~/dotfiles/herdr-update.sh               # reinstalls the plugin and the Claude integration
+~/dotfiles/scripts/herdr-update.sh               # reinstalls the plugin and the Claude integration
 herdr plugin list                        # pinned commit must equal: git rev-parse HEAD
 ```
 
