@@ -1059,6 +1059,41 @@ fn notification_content_click_runs_the_focus_helper() {
     fs::remove_dir_all(temp_dir).unwrap();
 }
 
+/// The user left Herdr, the agent finished, and the user clicked the
+/// notification. Herdr sends no `pane.focused` event for a pane it already
+/// calls focused, so the click itself must take the markers off.
+#[cfg(unix)]
+#[test]
+fn clicking_the_notification_removes_the_markers() {
+    let temp_dir = temp_test_dir();
+    let herdr = HerdrServer::shared();
+    let workspace = herdr.workspace();
+    herdr.report_agent(&workspace.pane_id, "claude", "blocked");
+    herdr.herdr(&[
+        "tab",
+        "rename",
+        &workspace.tab_id,
+        &marked(&tab_icon(), "work"),
+    ]);
+    write_executable(&temp_dir.join("alerter"), "#!/bin/sh\nexit 0\n");
+    let mut command = binary();
+    herdr.connect(&mut command);
+    let output = command
+        .args(["--notification-clicked", &workspace.pane_id, "1-2-3"])
+        .env("HERDR_PLUGIN_STATE_DIR", temp_dir.join("state"))
+        .env("PATH", path_with_temp_dir(&temp_dir))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let tab = herdr.herdr(&["tab", "get", &workspace.tab_id]);
+    assert_eq!(tab["result"]["tab"]["label"], "work");
+    fs::remove_dir_all(temp_dir).unwrap();
+}
+
 #[cfg(unix)]
 #[test]
 fn focus_click_without_terminal_binding_does_not_activate_or_focus() {

@@ -4,12 +4,14 @@
 
 use std::thread;
 
+use crate::notify::config;
 use crate::notify::executable::resolve_herdr_bin;
 use crate::notify::focus;
 use crate::notify::ledger::{self, Status};
 use crate::notify::notifier::{resolve_notifier_bin, send_notification, shown_groups};
 use crate::notify::script::{write_focus_script, AlerterOptions};
 use crate::notify::state::cleared_notification_marker_path;
+use crate::notify::tab_marker;
 use crate::notify::timings::Timings;
 
 /// The user clicked the notification: it is done, and its pane is focused.
@@ -19,6 +21,12 @@ pub(crate) fn clicked(pane_id: &str, post_id: &str, timings: &Timings) -> Result
     // Resolved first, so a second click that re-posts does not take this one
     // for a notification it closed.
     let _ = ledger::resolve(pane_id, Some(post_id), Status::Done);
+    // Herdr sends no `pane.focused` event when the pane is already the
+    // focused one (the user came back from another app), so the click takes
+    // the markers off itself.
+    if let Ok(herdr_bin) = resolve_herdr_bin() {
+        tab_marker::clear_for_focus(&config::load(), pane_id, &herdr_bin);
+    }
     let focused = focus::focus_pane(pane_id, timings);
     repost_closed_by_click(pane_id, timings);
     focused

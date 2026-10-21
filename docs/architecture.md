@@ -133,12 +133,14 @@ flowchart LR
   notify_ledger --> notify_util
   notify_notifier --> notify_executable
   notify_notifier --> notify_util
+  notify_outcome --> notify_config
   notify_outcome --> notify_executable
   notify_outcome --> notify_focus
   notify_outcome --> notify_ledger
   notify_outcome --> notify_notifier
   notify_outcome --> notify_script
   notify_outcome --> notify_state
+  notify_outcome --> notify_tab_marker
   notify_outcome --> notify_timings
   notify_script --> notify_ledger
   notify_script --> notify_notification
