@@ -1,10 +1,11 @@
-//! Ghostty: a Herdr client's container is the Ghostty terminal whose working
-//! directory is the client's.
+//! Ghostty: a Herdr client's container is the Ghostty terminal on the client's
+//! tty, or failing that, whose working directory is the client's.
 //!
-//! Ghostty exposes no terminal id to the processes it runs, so the adapter
-//! matches on the client's working directory. AppleScript's `focus` switches to
-//! that terminal's tab and brings its window forward; when several terminals
-//! share the directory, the first match wins. It needs Ghostty 1.3 or later,
+//! Ghostty exposes no terminal id the AppleScript dictionary can match, so the
+//! adapter matches on the client's tty, which is unique per terminal. Without a
+//! tty it falls back to the working directory; when several terminals share it,
+//! the first match wins. AppleScript's `focus` switches to that terminal's tab
+//! and brings its window forward. It needs Ghostty 1.3 or later,
 //! whose AppleScript dictionary has `terminal` and `focus`.
 
 use super::{FocusCommand, HerdrClient, TerminalAdapter};
@@ -25,16 +26,20 @@ impl TerminalAdapter for Ghostty {
         {
             return None;
         }
-        let cwd = client
-            .cwd
-            .as_deref()
-            .filter(|cwd| !cwd.chars().any(char::is_control))?;
-        let cwd = cwd.replace('\\', "\\\\").replace('"', "\\\"");
+        let plain = |value: &&str| !value.chars().any(char::is_control);
+        let (property, value) = match client.tty.as_deref().filter(plain) {
+            Some(tty) => ("tty", format!("/dev/{tty}")),
+            None => (
+                "working directory",
+                client.cwd.as_deref().filter(plain)?.to_string(),
+            ),
+        };
+        let value = value.replace('\\', "\\\\").replace('"', "\\\"");
         // `error` makes osascript fail when nothing matches, so the core tries
         // other clients instead of treating the click as handled.
         let script = format!(
             "tell application \"Ghostty\"\n\
-             set matches to every terminal whose working directory is \"{cwd}\"\n\
+             set matches to every terminal whose {property} is \"{value}\"\n\
              if (count of matches) is 0 then error \"no matching terminal\"\n\
              focus (item 1 of matches)\n\
              end tell"
@@ -70,6 +75,26 @@ mod tests {
         assert_eq!(command.args[0], "-e");
         assert!(script(&command).contains("whose working directory is \"/Users/me/code\""));
         assert!(script(&command).contains("focus (item 1 of matches)"));
+    }
+
+    #[test]
+    fn prefers_the_client_tty_over_the_directory() {
+        let client = client(Some("/Users/me/code"), &[GHOSTTY]).with_tty("ttys017");
+        let command = Ghostty.focus_command(&client).expect("focus command");
+        assert!(script(&command).contains("whose tty is \"/dev/ttys017\""));
+    }
+
+    #[test]
+    fn falls_back_to_the_directory_for_an_unusable_tty() {
+        let client = client(Some("/Users/me/code"), &[GHOSTTY]).with_tty("tty\ns1");
+        let command = Ghostty.focus_command(&client).expect("focus command");
+        assert!(script(&command).contains("whose working directory is \"/Users/me/code\""));
+    }
+
+    #[test]
+    fn needs_a_tty_or_a_directory() {
+        let client = client(None, &[GHOSTTY]).with_tty("tty\ns1");
+        assert_eq!(Ghostty.focus_command(&client), None);
     }
 
     #[test]

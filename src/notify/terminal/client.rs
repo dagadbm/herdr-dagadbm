@@ -20,6 +20,8 @@ pub(crate) struct HerdrClient {
     /// Working directory of the client process, for terminals that expose no
     /// container id to the client.
     pub(crate) cwd: Option<String>,
+    /// Controlling terminal device of the client process, e.g. `ttys017`.
+    pub(crate) tty: Option<String>,
 }
 
 impl HerdrClient {
@@ -39,10 +41,17 @@ impl HerdrClient {
     }
 
     #[cfg(test)]
+    pub(crate) fn with_tty(mut self, tty: &str) -> Self {
+        self.tty = Some(tty.to_string());
+        self
+    }
+
+    #[cfg(test)]
     pub(crate) fn from_pairs(pairs: &[(&str, &str)]) -> Self {
         Self {
             pid: 0,
             cwd: None,
+            tty: None,
             environment: pairs
                 .iter()
                 .map(|(key, value)| (key.to_string(), value.to_string()))
@@ -68,6 +77,7 @@ pub(crate) fn herdr_clients(herdr_socket_path: &str) -> Result<Vec<HerdrClient>,
             pid,
             environment: process_environment(pid).unwrap_or_default(),
             cwd: process_cwd(pid),
+            tty: controlling_tty(pid),
         })
         .collect())
 }
