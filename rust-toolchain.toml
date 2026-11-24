@@ -1,3 +1,6 @@
 [toolchain]
-channel = "stable"
+# Pinned below 1.100: its coverage instrumentation misattributes line counts
+# (lines inside a function report 0 hits while the next line reports them),
+# which fails the pre-push CRAP gate on code the tests do cover.
+channel = "1.99.0"
 components = ["rustfmt", "clippy", "llvm-tools-preview"]
