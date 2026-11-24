@@ -43,6 +43,8 @@ pub(crate) trait TerminalAdapter: Sync {
 pub(crate) struct FocusCommand {
     pub(crate) program: OsString,
     pub(crate) args: Vec<OsString>,
+    /// Variables added to the command's environment.
+    pub(crate) env: Vec<(OsString, OsString)>,
 }
 
 impl FocusCommand {
@@ -55,7 +57,14 @@ impl FocusCommand {
         Self {
             program: program.into(),
             args: args.into_iter().map(Into::into).collect(),
+            env: Vec::new(),
         }
+    }
+
+    /// Adds `key=value` to the command's environment.
+    pub(crate) fn with_env(mut self, key: impl Into<OsString>, value: impl Into<OsString>) -> Self {
+        self.env.push((key.into(), value.into()));
+        self
     }
 }
 
@@ -107,6 +116,7 @@ fn run_focus_command(command: &FocusCommand, timeout: Duration) -> Result<(), St
     let program = command.program.to_string_lossy();
     let mut child = Command::new(&command.program)
         .args(&command.args)
+        .envs(command.env.iter().map(|(key, value)| (key, value)))
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

@@ -3,7 +3,9 @@
 //! `wezterm cli activate-pane` switches to that pane's tab. It needs no
 //! configuration: the `wezterm` binary sits next to the GUI binary in
 //! `WEZTERM_EXECUTABLE_DIR`, and the CLI reaches the running GUI through its
-//! default socket.
+//! client's `WEZTERM_UNIX_SOCKET`. A click runs outside WezTerm, where the
+//! CLI's own socket guess can miss the GUI and stall trying to start a mux
+//! server.
 
 use std::path::Path;
 
@@ -30,10 +32,11 @@ impl TerminalAdapter for Wezterm {
             .env("WEZTERM_PANE")
             .filter(|id| id.bytes().all(|b| b.is_ascii_digit()))?;
         let wezterm = Path::new(client.env("WEZTERM_EXECUTABLE_DIR")?).join("wezterm");
-        Some(FocusCommand::new(
-            wezterm,
-            ["cli", "activate-pane", "--pane-id", pane_id],
-        ))
+        let command = FocusCommand::new(wezterm, ["cli", "activate-pane", "--pane-id", pane_id]);
+        Some(match client.env("WEZTERM_UNIX_SOCKET") {
+            Some(socket) => command.with_env("WEZTERM_UNIX_SOCKET", socket),
+            None => command,
+        })
     }
 }
 
@@ -63,6 +66,21 @@ mod tests {
                 "/Applications/WezTerm.app/Contents/MacOS/wezterm",
                 ["cli", "activate-pane", "--pane-id", "7"],
             ))
+        );
+    }
+
+    #[test]
+    fn passes_the_client_gui_socket_to_the_cli() {
+        let command = Wezterm
+            .focus_command(&client(&[
+                ("WEZTERM_PANE", "7"),
+                ("WEZTERM_UNIX_SOCKET", "/tmp/gui-sock-1"),
+                EXECUTABLE_DIR,
+            ]))
+            .expect("focus command");
+        assert_eq!(
+            command.env,
+            vec![("WEZTERM_UNIX_SOCKET".into(), "/tmp/gui-sock-1".into())]
         );
     }
 
